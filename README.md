@@ -11,6 +11,7 @@ Logs are stored in the Log folder under the current program. The default log lev
 ```go
 logger.SetLoggerName("AppName")
 logger.Info("haha")
+// will save like AppName.log
 ```
 
 ### Change log level
@@ -18,9 +19,10 @@ logger.Info("haha")
 ```go
 logger.SetLoggerName("AppName")
 logger.Info("haha")
-
+// [INFO]: 2022-02-11 08:51:16 - haha
 logger.SetLoggerLevel(logrus.InfoLevel)
 logger.Debug("haha")
+// [DEBUG]: 2022-02-11 08:51:16 - haha
 ```
 
 ### Set log file save path
@@ -29,7 +31,7 @@ By default, will save at `./Logs/`
 
 ```go
 logger.SetLoggerRootDir("/config/xxx")
-// will save at /config/xxx/Config
+// will save at /config/xxx/Logs
 ```
 
 ### Set logger name

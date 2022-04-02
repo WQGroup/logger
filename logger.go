@@ -15,6 +15,10 @@ func init() {
 	logInit()
 }
 
+func GetLogger() *logrus.Logger {
+	return loggerBase
+}
+
 func SetLoggerLevel(level logrus.Level) {
 	logLevel = level
 }

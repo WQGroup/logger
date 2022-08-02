@@ -128,7 +128,7 @@ func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge ti
 	Logger := &logrus.Logger{
 		Formatter: &easy.Formatter{
 			TimestampFormat: "2006-01-02 15:04:05",
-			LogFormat:       "[%lvl%]: %time% - %msg%\n",
+			LogFormat:       outputFormat,
 		},
 	}
 	pathRoot := filepath.Join(logRootDirFPath, "Logs")
@@ -155,9 +155,38 @@ func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge ti
 	return Logger
 }
 
+func NewLogger(logRootDirFPath, logFileName string) *logrus.Logger {
+
+	var err error
+	nowLogger := logrus.New()
+	nowLogger.Formatter = &easy.Formatter{
+		TimestampFormat: "2006-01-02 15:04:05",
+		LogFormat:       outputFormat,
+	}
+	pathRoot := logRootDirFPath
+	// create dir if not exists
+	if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
+		err = os.MkdirAll(pathRoot, os.ModePerm)
+		if err != nil {
+			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
+		}
+	}
+	fileName := fmt.Sprintf("%v.log", logFileName)
+	fileAbsPath := filepath.Join(pathRoot, fileName)
+
+	onceLoggerFile, err := os.OpenFile(fileAbsPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, os.ModePerm)
+	if err != nil {
+		panic(errors.New(fmt.Sprintf("Create log file error: %s", err.Error())))
+	}
+	nowLogger.SetOutput(onceLoggerFile)
+
+	return nowLogger
+}
+
 const (
 	NameDef         = "logger"
 	logRootFPathDef = "."
+	outputFormat    = "%time% - [%lvl%]: %msg%\n"
 )
 
 var (

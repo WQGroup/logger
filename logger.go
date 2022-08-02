@@ -1,6 +1,8 @@
 package logger
 
 import (
+	"errors"
+	"fmt"
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	"github.com/sirupsen/logrus"
 	easy "github.com/t-tomalak/logrus-easy-formatter"
@@ -118,10 +120,10 @@ func logInit() {
 		// 默认不设置的时候就是这个
 		logNameBase = NameDef
 	}
-	loggerBase = NewLogHelper(logNameBase, logLevel, time.Duration(7*24)*time.Hour, time.Duration(24)*time.Hour)
+	loggerBase = NewLogHelper(logRootDirFPath, logNameBase, logLevel, time.Duration(7*24)*time.Hour, time.Duration(24)*time.Hour)
 }
 
-func NewLogHelper(appName string, level logrus.Level, maxAge time.Duration, rotationTime time.Duration) *logrus.Logger {
+func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge time.Duration, rotationTime time.Duration) *logrus.Logger {
 
 	Logger := &logrus.Logger{
 		Formatter: &easy.Formatter{
@@ -130,10 +132,18 @@ func NewLogHelper(appName string, level logrus.Level, maxAge time.Duration, rota
 		},
 	}
 	pathRoot := filepath.Join(logRootDirFPath, "Logs")
+	// create dir if not exists
+	if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
+		err = os.MkdirAll(pathRoot, os.ModePerm)
+		if err != nil {
+			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
+		}
+	}
+
 	fileAbsPath := filepath.Join(pathRoot, appName+".log")
 
 	writer, _ := rotatelogs.New(
-		filepath.Join(pathRoot, appName+"--%YLen%m%d%H%M--.log"),
+		filepath.Join(pathRoot, appName+"--%Y%m%d%H%M--.log"),
 		rotatelogs.WithLinkName(fileAbsPath),
 		rotatelogs.WithMaxAge(maxAge),
 		rotatelogs.WithRotationTime(rotationTime),

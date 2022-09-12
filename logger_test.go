@@ -17,4 +17,7 @@ func TestAll(t *testing.T) {
 	srcFormatString := "haha"
 	Debugf(formatString, srcFormatString)
 	Infof(formatString, srcFormatString)
+
+	println(LogLinkFileFPath())
+	println(CurrentFileName())
 }

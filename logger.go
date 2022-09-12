@@ -140,16 +140,16 @@ func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge ti
 		}
 	}
 
-	loggerFileFPath = filepath.Join(pathRoot, appName+".log")
-	writer, _ := rotatelogs.New(
+	loggerLinkFileFPath = filepath.Join(pathRoot, appName+".log")
+	rotateLogsWriter, _ = rotatelogs.New(
 		filepath.Join(pathRoot, appName+"--%Y%m%d%H%M--.log"),
-		rotatelogs.WithLinkName(loggerFileFPath),
+		rotatelogs.WithLinkName(loggerLinkFileFPath),
 		rotatelogs.WithMaxAge(maxAge),
 		rotatelogs.WithRotationTime(rotationTime),
 	)
 
 	Logger.SetLevel(level)
-	Logger.SetOutput(io.MultiWriter(os.Stderr, writer))
+	Logger.SetOutput(io.MultiWriter(os.Stderr, rotateLogsWriter))
 
 	return Logger
 }
@@ -182,8 +182,16 @@ func NewLogger(logRootDirFPath, logFileName string) *logrus.Logger {
 	return nowLogger
 }
 
-func LogFileFPath() string {
-	return loggerFileFPath
+func LogLinkFileFPath() string {
+	return loggerLinkFileFPath
+}
+
+func CurrentFileName() string {
+
+	if rotateLogsWriter == nil {
+		return ""
+	}
+	return rotateLogsWriter.CurrentFileName()
 }
 
 const (
@@ -193,9 +201,10 @@ const (
 )
 
 var (
-	logLevel        logrus.Level
-	logNameBase     = NameDef
-	logRootDirFPath = logRootFPathDef
-	loggerBase      *logrus.Logger
-	loggerFileFPath = ""
+	logLevel            logrus.Level
+	logNameBase         = NameDef
+	logRootDirFPath     = logRootFPathDef
+	loggerBase          *logrus.Logger
+	loggerLinkFileFPath = ""
+	rotateLogsWriter    *rotatelogs.RotateLogs
 )

@@ -1,11 +1,14 @@
 package logger
 
 import (
-	"github.com/sirupsen/logrus"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 func TestAll(t *testing.T) {
+
+	SetLoggerOnlyMsg(true)
 
 	SetLoggerLevel(logrus.DebugLevel)
 

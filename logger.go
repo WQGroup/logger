@@ -3,17 +3,19 @@ package logger
 import (
 	"errors"
 	"fmt"
-	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
-	"github.com/sirupsen/logrus"
-	easy "github.com/t-tomalak/logrus-easy-formatter"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
+
+	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
+	"github.com/sirupsen/logrus"
+	easy "github.com/t-tomalak/logrus-easy-formatter"
 )
 
 func init() {
 	logLevel = logrus.InfoLevel
+	logOnlyMsg = false
 	logInit()
 }
 
@@ -27,6 +29,12 @@ func SetLoggerLevel(level logrus.Level) {
 
 func SetLoggerRootDir(loggerRootDir string) {
 	logRootDirFPath = loggerRootDir
+	// re init
+	logInit()
+}
+
+func SetLoggerOnlyMsg(onlyMsg bool) {
+	logOnlyMsg = onlyMsg
 	// re init
 	logInit()
 }
@@ -120,15 +128,22 @@ func logInit() {
 		// 默认不设置的时候就是这个
 		logNameBase = NameDef
 	}
-	loggerBase = NewLogHelper(logRootDirFPath, logNameBase, logLevel, time.Duration(7*24)*time.Hour, time.Duration(24)*time.Hour)
+	loggerBase = NewLogHelper(logRootDirFPath, logNameBase, logLevel,
+		time.Duration(7*24)*time.Hour, time.Duration(24)*time.Hour)
 }
 
 func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge time.Duration, rotationTime time.Duration) *logrus.Logger {
 
+	outputFormatNow := outputFormat
+	if logOnlyMsg == true {
+		// only msg
+		outputFormatNow = outputFormatOnlyMsg
+	}
+
 	Logger := &logrus.Logger{
 		Formatter: &easy.Formatter{
 			TimestampFormat: "2006-01-02 15:04:05",
-			LogFormat:       outputFormat,
+			LogFormat:       outputFormatNow,
 		},
 	}
 	pathRoot := filepath.Join(logRootDirFPath, "Logs")
@@ -158,9 +173,14 @@ func NewLogger(logRootDirFPath, logFileName string) *logrus.Logger {
 
 	var err error
 	nowLogger := logrus.New()
+	outputFormatNow := outputFormat
+	if logOnlyMsg == true {
+		// only msg
+		outputFormatNow = outputFormatOnlyMsg
+	}
 	nowLogger.Formatter = &easy.Formatter{
 		TimestampFormat: "2006-01-02 15:04:05",
-		LogFormat:       outputFormat,
+		LogFormat:       outputFormatNow,
 	}
 	pathRoot := logRootDirFPath
 	// create dir if not exists
@@ -195,12 +215,14 @@ func CurrentFileName() string {
 }
 
 const (
-	NameDef         = "logger"
-	logRootFPathDef = "."
-	outputFormat    = "%time% - [%lvl%]: %msg%\n"
+	NameDef             = "logger"
+	logRootFPathDef     = "."
+	outputFormat        = "%time% - [%lvl%]: %msg%\n"
+	outputFormatOnlyMsg = "%msg%\n"
 )
 
 var (
+	logOnlyMsg          bool
 	logLevel            logrus.Level
 	logNameBase         = NameDef
 	logRootDirFPath     = logRootFPathDef

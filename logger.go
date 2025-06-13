@@ -52,6 +52,7 @@ func SetLoggerSettings(inSettings ...*Settings) {
 
 func NewLogHelper(settings *Settings) *logrus.Logger {
 
+	var err error
 	outputFormatNow := outputFormat
 	if settings.OnlyMsg == true {
 		// only msg
@@ -72,14 +73,14 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 		pathRoot = settings.LogRootFPath
 	}
 	// create dir if not exists
-	if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
+	if _, err = os.Stat(pathRoot); os.IsNotExist(err) {
 		err = os.MkdirAll(pathRoot, os.ModePerm)
 		if err != nil {
 			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
 		}
 	}
 	loggerLinkFileFPath = filepath.Join(pathRoot, settings.LogNameBase+".log")
-	rotateLogsWriter, err := rotatelogs.New(
+	rotateLogsWriter, err = rotatelogs.New(
 		filepath.Join(pathRoot, settings.LogNameBase+"--%Y%m%d%H%M--.log"),
 		rotatelogs.WithLinkName(loggerLinkFileFPath),
 		rotatelogs.WithMaxAge(settings.MaxAge),

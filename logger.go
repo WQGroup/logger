@@ -79,15 +79,23 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 		}
 	}
 	loggerLinkFileFPath = filepath.Join(pathRoot, settings.LogNameBase+".log")
-	rotateLogsWriter, _ = rotatelogs.New(
+	rotateLogsWriter, err := rotatelogs.New(
 		filepath.Join(pathRoot, settings.LogNameBase+"--%Y%m%d%H%M--.log"),
 		rotatelogs.WithLinkName(loggerLinkFileFPath),
 		rotatelogs.WithMaxAge(settings.MaxAge),
 		rotatelogs.WithRotationTime(settings.RotationTime),
 	)
+	if err != nil {
+		panic(errors.New(fmt.Sprintf("Create log file error: %s", err.Error())))
+	}
 
 	Logger.SetLevel(settings.Level)
-	Logger.SetOutput(io.MultiWriter(os.Stderr, rotateLogsWriter))
+	// 在Windows下，如果使用-H=windowsgui编译，os.Stderr将无效，所以需要特殊处理
+	if isWindowsGUI() {
+		Logger.SetOutput(rotateLogsWriter)
+	} else {
+		Logger.SetOutput(io.MultiWriter(os.Stderr, rotateLogsWriter))
+	}
 
 	return Logger
 }
@@ -139,3 +147,10 @@ var (
 	loggerBase          *logrus.Logger         // 日志基础记录器
 	rotateLogsWriter    *rotatelogs.RotateLogs // 日志轮转记录器
 )
+
+// isWindowsGUI 检测程序是否以Windows GUI模式运行
+func isWindowsGUI() bool {
+	// 尝试获取标准输出句柄，如果失败则可能是GUI模式
+	_, err := os.Stderr.Stat()
+	return err != nil
+}

@@ -6,10 +6,10 @@ import (
 
 func TestAll(t *testing.T) {
 
-	//settings := NewSettings()
-	////settings.OnlyMsg = true
-	////settings.LogRootFPath = "./mylogs"
-	//SetLoggerSettings(settings)
+	settings := NewSettings()
+	settings.OnlyMsg = true
+	settings.LogRootFPath = "./mylogs"
+	SetLoggerSettings(settings)
 
 	formatString := "%s"
 	srcFormatString := "haha"

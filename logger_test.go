@@ -2,22 +2,18 @@ package logger
 
 import (
 	"testing"
-
-	"github.com/sirupsen/logrus"
 )
 
 func TestAll(t *testing.T) {
 
-	SetLoggerOnlyMsg(true)
-
-	SetLoggerLevel(logrus.DebugLevel)
-
-	SetLoggerRootDir(".")
-
-	SetLoggerName("TestAppLogger")
+	//settings := NewSettings()
+	////settings.OnlyMsg = true
+	////settings.LogRootFPath = "./mylogs"
+	//SetLoggerSettings(settings)
 
 	formatString := "%s"
 	srcFormatString := "haha"
+	Info(srcFormatString)
 	Debugf(formatString, srcFormatString)
 	Infof(formatString, srcFormatString)
 

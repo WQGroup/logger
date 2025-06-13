@@ -13,129 +13,47 @@ import (
 	easy "github.com/t-tomalak/logrus-easy-formatter"
 )
 
-func init() {
-	logLevel = logrus.InfoLevel
-	logOnlyMsg = false
-	logInit()
-}
-
 func GetLogger() *logrus.Logger {
+
+	if loggerBase == nil {
+		// 如果没有设置日志记录器，则使用默认设置
+		SetLoggerSettings(NewSettings())
+	}
 	return loggerBase
 }
 
-func SetLoggerLevel(level logrus.Level) {
-	logLevel = level
-}
+func SetLoggerSettings(inSettings ...*Settings) {
 
-func SetLoggerRootDir(loggerRootDir string) {
-	logRootDirFPath = loggerRootDir
-	// re init
-	logInit()
-}
-
-func SetLoggerOnlyMsg(onlyMsg bool) {
-	logOnlyMsg = onlyMsg
-	// re init
-	logInit()
-}
-
-func SetLoggerName(logName string) {
-	if logName == "" {
-		panic("Logger name is empty")
+	var settings *Settings
+	if len(inSettings) > 0 {
+		settings = inSettings[0]
+	} else {
+		settings = NewSettings()
 	}
-	logNameBase = logName
-	// re init
-	logInit()
-}
 
-func Debugf(format string, args ...interface{}) {
-	loggerBase.Debugf(format, args...)
-}
-func Infof(format string, args ...interface{}) {
-	loggerBase.Infof(format, args...)
-}
-func Printf(format string, args ...interface{}) {
-	loggerBase.Printf(format, args...)
-}
-func Warnf(format string, args ...interface{}) {
-	loggerBase.Warnf(format, args...)
-}
-func Warningf(format string, args ...interface{}) {
-	loggerBase.Warningf(format, args...)
-}
-func Errorf(format string, args ...interface{}) {
-	loggerBase.Errorf(format, args...)
-}
-func Fatalf(format string, args ...interface{}) {
-	loggerBase.Fatalf(format, args...)
-}
-func Panicf(format string, args ...interface{}) {
-	loggerBase.Panicf(format, args...)
-}
-
-func Debug(args ...interface{}) {
-	loggerBase.Debug(args...)
-}
-func Info(args ...interface{}) {
-	loggerBase.Info(args...)
-}
-func Print(args ...interface{}) {
-	loggerBase.Print(args...)
-}
-func Warn(args ...interface{}) {
-	loggerBase.Warn(args...)
-}
-func Warning(args ...interface{}) {
-	loggerBase.Warning(args...)
-}
-func Error(args ...interface{}) {
-	loggerBase.Error(args...)
-}
-func Fatal(args ...interface{}) {
-	loggerBase.Fatal(args...)
-}
-func Panic(args ...interface{}) {
-	loggerBase.Panic(args...)
-}
-
-func Debugln(args ...interface{}) {
-	loggerBase.Debugln(args...)
-}
-func Infoln(args ...interface{}) {
-	loggerBase.Infoln(args...)
-}
-func Println(args ...interface{}) {
-	loggerBase.Println(args...)
-}
-func Warnln(args ...interface{}) {
-	loggerBase.Warnln(args...)
-}
-func Warningln(args ...interface{}) {
-	loggerBase.Warningln(args...)
-}
-func Errorln(args ...interface{}) {
-	loggerBase.Errorln(args...)
-}
-func Fatalln(args ...interface{}) {
-	loggerBase.Fatalln(args...)
-}
-func Panicln(args ...interface{}) {
-	loggerBase.Panicln(args...)
-}
-
-func logInit() {
-	if logNameBase == "" {
-		// 默认不设置的时候就是这个
-		logNameBase = NameDef
+	if settings.LogRootFPath == "" {
+		settings.LogRootFPath = logRootFPathDef
 	}
-	loggerBase = NewLogHelper(logRootDirFPath, logNameBase, logLevel,
-		time.Duration(7*24)*time.Hour, time.Duration(24)*time.Hour)
+
+	if settings.LogNameBase == "" {
+		settings.LogNameBase = NameDef
+	}
+
+	if settings.RotationTime <= 0 {
+		settings.RotationTime = time.Duration(24) * time.Hour // 默认每天轮转一次
+	}
+
+	if settings.MaxAge <= 0 {
+		settings.MaxAge = time.Duration(7*24) * time.Hour // 默认保存7天
+	}
+
+	loggerBase = NewLogHelper(settings)
 }
 
-func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge time.Duration, rotationTime time.Duration) *logrus.Logger {
+func NewLogHelper(settings *Settings) *logrus.Logger {
 
 	outputFormatNow := outputFormat
-	if logOnlyMsg == true {
+	if settings.OnlyMsg == true {
 		// only msg
 		outputFormatNow = outputFormatOnlyMsg
 	}
@@ -146,7 +64,13 @@ func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge ti
 			LogFormat:       outputFormatNow,
 		},
 	}
-	pathRoot := filepath.Join(logRootDirFPath, "Logs")
+
+	// 默认使用当前目录下的 Logs 目录
+	pathRoot := filepath.Join(settings.LogRootFPath, "Logs")
+	if settings.LogRootFPath != logRootFPathDef {
+		// 如果设置了日志根目录，则使用该目录
+		pathRoot = settings.LogRootFPath
+	}
 	// create dir if not exists
 	if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
 		err = os.MkdirAll(pathRoot, os.ModePerm)
@@ -154,58 +78,26 @@ func NewLogHelper(logRootDirFPath, appName string, level logrus.Level, maxAge ti
 			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
 		}
 	}
-
-	loggerLinkFileFPath = filepath.Join(pathRoot, appName+".log")
+	loggerLinkFileFPath = filepath.Join(pathRoot, settings.LogNameBase+".log")
 	rotateLogsWriter, _ = rotatelogs.New(
-		filepath.Join(pathRoot, appName+"--%Y%m%d%H%M--.log"),
+		filepath.Join(pathRoot, settings.LogNameBase+"--%Y%m%d%H%M--.log"),
 		rotatelogs.WithLinkName(loggerLinkFileFPath),
-		rotatelogs.WithMaxAge(maxAge),
-		rotatelogs.WithRotationTime(rotationTime),
+		rotatelogs.WithMaxAge(settings.MaxAge),
+		rotatelogs.WithRotationTime(settings.RotationTime),
 	)
 
-	Logger.SetLevel(level)
+	Logger.SetLevel(settings.Level)
 	Logger.SetOutput(io.MultiWriter(os.Stderr, rotateLogsWriter))
 
 	return Logger
 }
 
-func NewLogger(logRootDirFPath, logFileName string) *logrus.Logger {
-
-	var err error
-	nowLogger := logrus.New()
-	outputFormatNow := outputFormat
-	if logOnlyMsg == true {
-		// only msg
-		outputFormatNow = outputFormatOnlyMsg
-	}
-	nowLogger.Formatter = &easy.Formatter{
-		TimestampFormat: "2006-01-02 15:04:05",
-		LogFormat:       outputFormatNow,
-	}
-	pathRoot := logRootDirFPath
-	// create dir if not exists
-	if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
-		err = os.MkdirAll(pathRoot, os.ModePerm)
-		if err != nil {
-			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
-		}
-	}
-	fileName := fmt.Sprintf("%v.log", logFileName)
-	fileAbsPath := filepath.Join(pathRoot, fileName)
-
-	onceLoggerFile, err := os.OpenFile(fileAbsPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, os.ModePerm)
-	if err != nil {
-		panic(errors.New(fmt.Sprintf("Create log file error: %s", err.Error())))
-	}
-	nowLogger.SetOutput(onceLoggerFile)
-
-	return nowLogger
-}
-
+// LogLinkFileFPath returns the path of the log file that is linked to the current log writer.
 func LogLinkFileFPath() string {
 	return loggerLinkFileFPath
 }
 
+// CurrentFileName 当前日志文件名
 func CurrentFileName() string {
 
 	if rotateLogsWriter == nil {
@@ -221,12 +113,29 @@ const (
 	outputFormatOnlyMsg = "%msg%\n"
 )
 
+type Settings struct {
+	OnlyMsg      bool          // 是否只输出消息内容
+	Level        logrus.Level  // 日志级别
+	LogRootFPath string        // 日志根目录
+	LogNameBase  string        // 日志名称
+	RotationTime time.Duration // 日志轮转时间
+	MaxAge       time.Duration // 日志最大保存时间
+}
+
+// NewSettings 创建一个新的日志设置
+func NewSettings() *Settings {
+	return &Settings{
+		OnlyMsg:      false,
+		Level:        logrus.InfoLevel,
+		LogRootFPath: logRootFPathDef,
+		LogNameBase:  NameDef,
+		RotationTime: time.Duration(24) * time.Hour,   // 默认每天轮转一次
+		MaxAge:       time.Duration(7*24) * time.Hour, // 默认保存7天
+	}
+}
+
 var (
-	logOnlyMsg          bool
-	logLevel            logrus.Level
-	logNameBase         = NameDef
-	logRootDirFPath     = logRootFPathDef
-	loggerBase          *logrus.Logger
-	loggerLinkFileFPath = ""
-	rotateLogsWriter    *rotatelogs.RotateLogs
+	loggerLinkFileFPath = ""                   // 日志链接文件路径
+	loggerBase          *logrus.Logger         // 日志基础记录器
+	rotateLogsWriter    *rotatelogs.RotateLogs // 日志轮转记录器
 )

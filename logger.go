@@ -11,6 +11,7 @@ import (
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	"github.com/sirupsen/logrus"
 	easy "github.com/t-tomalak/logrus-easy-formatter"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 func GetLogger() *logrus.Logger {
@@ -43,8 +44,11 @@ func SetLoggerSettings(inSettings ...*Settings) {
 		settings.RotationTime = time.Duration(24) * time.Hour // 默认每天轮转一次
 	}
 
+	if settings.MaxAgeDays > 0 {
+		settings.MaxAge = time.Duration(settings.MaxAgeDays*24) * time.Hour
+	}
 	if settings.MaxAge <= 0 {
-		settings.MaxAge = time.Duration(7*24) * time.Hour // 默认保存7天
+		settings.MaxAge = time.Duration(7*24) * time.Hour
 	}
 
 	loggerBase = NewLogHelper(settings)
@@ -66,37 +70,63 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 		},
 	}
 
-	// 默认使用当前目录下的 Logs 目录
 	pathRoot := filepath.Join(settings.LogRootFPath, "Logs")
 	if settings.LogRootFPath != logRootFPathDef {
-		// 如果设置了日志根目录，则使用该目录
 		pathRoot = settings.LogRootFPath
 	}
-	// create dir if not exists
 	if _, err = os.Stat(pathRoot); os.IsNotExist(err) {
 		err = os.MkdirAll(pathRoot, os.ModePerm)
 		if err != nil {
 			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
 		}
 	}
-	loggerLinkFileFPath = filepath.Join(pathRoot, settings.LogNameBase+".log")
-	rotateLogsWriter, err = rotatelogs.New(
-		filepath.Join(pathRoot, settings.LogNameBase+"--%Y%m%d%H%M--.log"),
-		rotatelogs.WithLinkName(loggerLinkFileFPath),
-		rotatelogs.WithMaxAge(settings.MaxAge),
-		rotatelogs.WithRotationTime(settings.RotationTime),
-	)
-	if err != nil {
-		panic(errors.New(fmt.Sprintf("Create log file error: %s", err.Error())))
+	now := time.Now()
+	yearDir := filepath.Join(pathRoot, now.Format("2006"))
+	monthDir := filepath.Join(yearDir, now.Format("01"))
+	dayDir := filepath.Join(monthDir, now.Format("02"))
+	if _, err = os.Stat(dayDir); os.IsNotExist(err) {
+		err = os.MkdirAll(dayDir, os.ModePerm)
+		if err != nil {
+			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
+		}
+	}
+
+	var fileWriter io.Writer
+	if settings.MaxSizeMB > 0 {
+		currentLogFileFPath = filepath.Join(dayDir, settings.LogNameBase+".log")
+		loggerLinkFileFPath = currentLogFileFPath
+		fileWriter = &lumberjack.Logger{
+			Filename:  currentLogFileFPath,
+			MaxSize:   settings.MaxSizeMB,
+			MaxAge:    settings.MaxAgeDays,
+			LocalTime: true,
+			Compress:  false,
+		}
+		rotateLogsWriter = nil
+	} else {
+		loggerLinkFileFPath = filepath.Join(pathRoot, settings.LogNameBase+".log")
+		rotateLogsWriter, err = rotatelogs.New(
+			filepath.Join(pathRoot, "%Y", "%m", "%d", settings.LogNameBase+"--%H%M--.log"),
+			rotatelogs.WithLinkName(loggerLinkFileFPath),
+			rotatelogs.WithMaxAge(settings.MaxAge),
+			rotatelogs.WithRotationTime(settings.RotationTime),
+		)
+		if err != nil {
+			panic(errors.New(fmt.Sprintf("Create log file error: %s", err.Error())))
+		}
+		fileWriter = rotateLogsWriter
+		currentLogFileFPath = loggerLinkFileFPath
 	}
 
 	Logger.SetLevel(settings.Level)
 	// 在Windows下，如果使用-H=windowsgui编译，os.Stderr将无效，所以需要特殊处理
 	if isWindowsGUI() {
-		Logger.SetOutput(rotateLogsWriter)
+		Logger.SetOutput(fileWriter)
 	} else {
-		Logger.SetOutput(io.MultiWriter(os.Stderr, rotateLogsWriter))
+		Logger.SetOutput(io.MultiWriter(os.Stderr, fileWriter))
 	}
+
+	_ = CleanupExpiredLogs(pathRoot, settings.MaxAgeDays)
 
 	return Logger
 }
@@ -109,10 +139,10 @@ func LogLinkFileFPath() string {
 // CurrentFileName 当前日志文件名
 func CurrentFileName() string {
 
-	if rotateLogsWriter == nil {
-		return ""
+	if rotateLogsWriter != nil {
+		return rotateLogsWriter.CurrentFileName()
 	}
-	return rotateLogsWriter.CurrentFileName()
+	return currentLogFileFPath
 }
 
 const (
@@ -129,6 +159,8 @@ type Settings struct {
 	LogNameBase  string        // 日志名称
 	RotationTime time.Duration // 日志轮转时间
 	MaxAge       time.Duration // 日志最大保存时间
+	MaxAgeDays   int
+	MaxSizeMB    int
 }
 
 // NewSettings 创建一个新的日志设置
@@ -138,8 +170,10 @@ func NewSettings() *Settings {
 		Level:        logrus.InfoLevel,
 		LogRootFPath: logRootFPathDef,
 		LogNameBase:  NameDef,
-		RotationTime: time.Duration(24) * time.Hour,   // 默认每天轮转一次
-		MaxAge:       time.Duration(7*24) * time.Hour, // 默认保存7天
+		RotationTime: time.Duration(24) * time.Hour, // 默认每天轮转一次
+		MaxAge:       time.Duration(7*24) * time.Hour,
+		MaxAgeDays:   7,
+		MaxSizeMB:    0,
 	}
 }
 
@@ -147,6 +181,7 @@ var (
 	loggerLinkFileFPath = ""                   // 日志链接文件路径
 	loggerBase          *logrus.Logger         // 日志基础记录器
 	rotateLogsWriter    *rotatelogs.RotateLogs // 日志轮转记录器
+	currentLogFileFPath string                 // 当前日志文件路径
 )
 
 // isWindowsGUI 检测程序是否以Windows GUI模式运行

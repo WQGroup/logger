@@ -61,7 +61,7 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 
 	Logger := &logrus.Logger{
 		Formatter: &easy.Formatter{
-			TimestampFormat: "2006-01-02 15:04:05",
+			TimestampFormat: "2006-01-02 15:04:05.000",
 			LogFormat:       outputFormatNow,
 		},
 	}

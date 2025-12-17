@@ -80,21 +80,31 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
 		}
 	}
-	now := time.Now()
-	yearDir := filepath.Join(pathRoot, now.Format("2006"))
-	monthDir := filepath.Join(yearDir, now.Format("01"))
-	dayDir := filepath.Join(monthDir, now.Format("02"))
-	if _, err = os.Stat(dayDir); os.IsNotExist(err) {
-		err = os.MkdirAll(dayDir, os.ModePerm)
-		if err != nil {
-			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
-		}
-	}
 
 	var fileWriter io.Writer
 	if settings.MaxSizeMB > 0 {
-		currentLogFileFPath = filepath.Join(dayDir, settings.LogNameBase+".log")
-		loggerLinkFileFPath = currentLogFileFPath
+		// 大小轮转模式
+		var logDir string
+		if settings.UseHierarchicalPath {
+			// 新格式：按年/月/日分层
+			now := time.Now()
+			yearDir := filepath.Join(pathRoot, now.Format("2006"))
+			monthDir := filepath.Join(yearDir, now.Format("01"))
+			dayDir := filepath.Join(monthDir, now.Format("02"))
+			logDir = dayDir
+		} else {
+			// 旧格式：扁平结构
+			logDir = pathRoot
+		}
+
+		if _, err = os.Stat(logDir); os.IsNotExist(err) {
+			err = os.MkdirAll(logDir, os.ModePerm)
+			if err != nil {
+				panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
+			}
+		}
+
+		currentLogFileFPath = filepath.Join(logDir, settings.LogNameBase+".log")
 		fileWriter = &lumberjack.Logger{
 			Filename:  currentLogFileFPath,
 			MaxSize:   settings.MaxSizeMB,
@@ -104,10 +114,18 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 		}
 		rotateLogsWriter = nil
 	} else {
-		loggerLinkFileFPath = filepath.Join(pathRoot, settings.LogNameBase+".log")
+		// 时间轮转模式
+		var logPattern string
+		if settings.UseHierarchicalPath {
+			// 新格式：按年/月/日分层
+			logPattern = filepath.Join(pathRoot, "%Y", "%m", "%d", settings.LogNameBase+"--%H%M--.log")
+		} else {
+			// 旧格式：扁平结构
+			logPattern = filepath.Join(pathRoot, settings.LogNameBase+"--%Y%m%d%H%M--.log")
+		}
+
 		rotateLogsWriter, err = rotatelogs.New(
-			filepath.Join(pathRoot, "%Y", "%m", "%d", settings.LogNameBase+"--%H%M--.log"),
-			rotatelogs.WithLinkName(loggerLinkFileFPath),
+			logPattern,
 			rotatelogs.WithMaxAge(settings.MaxAge),
 			rotatelogs.WithRotationTime(settings.RotationTime),
 		)
@@ -115,7 +133,8 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 			panic(errors.New(fmt.Sprintf("Create log file error: %s", err.Error())))
 		}
 		fileWriter = rotateLogsWriter
-		currentLogFileFPath = loggerLinkFileFPath
+		// 使用 rotatelogs 提供的当前文件名
+		currentLogFileFPath = rotateLogsWriter.CurrentFileName()
 	}
 
 	Logger.SetLevel(settings.Level)
@@ -131,9 +150,9 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 	return Logger
 }
 
-// LogLinkFileFPath returns the path of the log file that is linked to the current log writer.
+// LogLinkFileFPath returns the path of the current log file.
 func LogLinkFileFPath() string {
-	return loggerLinkFileFPath
+	return currentLogFileFPath
 }
 
 // CurrentFileName 当前日志文件名
@@ -153,32 +172,33 @@ const (
 )
 
 type Settings struct {
-	OnlyMsg      bool          // 是否只输出消息内容
-	Level        logrus.Level  // 日志级别
-	LogRootFPath string        // 日志根目录
-	LogNameBase  string        // 日志名称
-	RotationTime time.Duration // 日志轮转时间
-	MaxAge       time.Duration // 日志最大保存时间
-	MaxAgeDays   int
-	MaxSizeMB    int
+	OnlyMsg             bool          // 是否只输出消息内容
+	Level               logrus.Level  // 日志级别
+	LogRootFPath        string        // 日志根目录
+	LogNameBase         string        // 日志名称
+	RotationTime        time.Duration // 日志轮转时间
+	MaxAge              time.Duration // 日志最大保存时间
+	MaxAgeDays          int
+	MaxSizeMB           int
+	UseHierarchicalPath bool          // 是否使用分层路径（YYYY/MM/DD）
 }
 
 // NewSettings 创建一个新的日志设置
 func NewSettings() *Settings {
 	return &Settings{
-		OnlyMsg:      false,
-		Level:        logrus.InfoLevel,
-		LogRootFPath: logRootFPathDef,
-		LogNameBase:  NameDef,
-		RotationTime: time.Duration(24) * time.Hour, // 默认每天轮转一次
-		MaxAge:       time.Duration(7*24) * time.Hour,
-		MaxAgeDays:   7,
-		MaxSizeMB:    0,
+		OnlyMsg:             false,
+		Level:               logrus.InfoLevel,
+		LogRootFPath:        logRootFPathDef,
+		LogNameBase:         NameDef,
+		RotationTime:        time.Duration(24) * time.Hour, // 默认每天轮转一次
+		MaxAge:              time.Duration(7*24) * time.Hour,
+		MaxAgeDays:          7,
+		MaxSizeMB:           0,
+		UseHierarchicalPath: false, // 默认使用旧格式，保持向后兼容
 	}
 }
 
 var (
-	loggerLinkFileFPath = ""                   // 日志链接文件路径
 	loggerBase          *logrus.Logger         // 日志基础记录器
 	rotateLogsWriter    *rotatelogs.RotateLogs // 日志轮转记录器
 	currentLogFileFPath string                 // 当前日志文件路径

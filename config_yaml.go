@@ -10,11 +10,12 @@ import (
 )
 
 type YamlConfig struct {
-    LogRoot     string `yaml:"log_root"`
-    LogNameBase string `yaml:"log_name_base"`
-    Level       string `yaml:"level"`
-    DaysToKeep  int    `yaml:"days_to_keep"`
-    MaxSizeMB   int    `yaml:"max_size_mb"`
+    LogRoot             string `yaml:"log_root"`
+    LogNameBase         string `yaml:"log_name_base"`
+    Level               string `yaml:"level"`
+    DaysToKeep          int    `yaml:"days_to_keep"`
+    MaxSizeMB           int    `yaml:"max_size_mb"`
+    UseHierarchicalPath bool   `yaml:"use_hierarchical_path"`
 }
 
 func parseLevel(s string) logrus.Level {
@@ -64,6 +65,7 @@ func LoadSettingsFromYAML(path string) (*Settings, error) {
     if cfg.MaxSizeMB > 0 {
         s.MaxSizeMB = cfg.MaxSizeMB
     }
+    s.UseHierarchicalPath = cfg.UseHierarchicalPath
     return s, nil
 }
 

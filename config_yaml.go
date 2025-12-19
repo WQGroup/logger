@@ -16,6 +16,15 @@ type YamlConfig struct {
     DaysToKeep          int    `yaml:"days_to_keep"`
     MaxSizeMB           int    `yaml:"max_size_mb"`
     UseHierarchicalPath bool   `yaml:"use_hierarchical_path"`
+
+    // 新增的格式器配置字段
+    FormatterType       string `yaml:"formatter_type"`
+    TimestampFormat     string `yaml:"timestamp_format"`
+    DisableTimestamp    bool   `yaml:"disable_timestamp"`
+    DisableLevel        bool   `yaml:"disable_level"`
+    DisableCaller       bool   `yaml:"disable_caller"`
+    FullTimestamp       bool   `yaml:"full_timestamp"`
+    LogFormat           string `yaml:"log_format"`
 }
 
 func parseLevel(s string) logrus.Level {
@@ -66,6 +75,22 @@ func LoadSettingsFromYAML(path string) (*Settings, error) {
         s.MaxSizeMB = cfg.MaxSizeMB
     }
     s.UseHierarchicalPath = cfg.UseHierarchicalPath
+
+    // 设置新的格式器配置字段
+    if cfg.FormatterType != "" {
+        s.FormatterType = cfg.FormatterType
+    }
+    if cfg.TimestampFormat != "" {
+        s.TimestampFormat = cfg.TimestampFormat
+    }
+    s.DisableTimestamp = cfg.DisableTimestamp
+    s.DisableLevel = cfg.DisableLevel
+    s.DisableCaller = cfg.DisableCaller
+    s.FullTimestamp = cfg.FullTimestamp
+    if cfg.LogFormat != "" {
+        s.LogFormat = cfg.LogFormat
+    }
+
     return s, nil
 }
 

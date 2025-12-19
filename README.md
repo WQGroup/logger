@@ -10,11 +10,14 @@
 - **YAML 配置支持**：可通过配置文件设置日志参数
 - **Windows GUI 兼容**：特殊处理 Windows GUI 模式下的日志输出
 - **毫秒级时间戳**：日志时间戳包含毫秒精度，便于调试
-- **所有 logrus 日志级别**：Trace、Debug、Info、Warn、Error、Fatal、Panic
+- **灵活的格式器支持**：支持多种日志格式器（withField、easy、json、text）
+- **结构化日志字段**：自动将 logrus 字段以 key=value 格式追加到日志后
+- **自定义格式器**：支持用户自定义日志格式器
+- **向后兼容**：完全兼容旧版本配置和格式
 
 ## 快速开始
 
-### 基本使用
+### 基本使用（默认使用 withField 格式器）
 
 ```go
 import "github.com/WQGroup/logger"
@@ -23,6 +26,18 @@ import "github.com/WQGroup/logger"
 logger.SetLoggerName("MyApp")
 logger.Info("应用程序启动")
 // 输出：2024-01-01 12:00:00.123 - [INFO]: 应用程序启动
+
+// 使用结构化字段
+logger.WithField("user_id", 12345).Info("用户登录")
+// 输出：2024-01-01 12:00:00.123 - [INFO]: 用户登录 user_id=12345
+
+// 使用多个字段
+logger.WithFields(map[string]interface{}{
+    "module": "auth",
+    "action": "login",
+    "user": "john",
+}).Info("认证成功")
+// 输出：2024-01-01 12:00:00.123 - [INFO]: 认证成功 module=auth action=login user=john
 ```
 
 ### 通过 Settings 配置
@@ -52,6 +67,15 @@ level: "info"                        # 日志级别
 days_to_keep: 7                      # 保存天数
 max_size_mb: 0                       # 文件大小限制(MB)，0表示不启用
 use_hierarchical_path: true          # 是否使用分层路径
+
+# 格式器配置
+formatter_type: "withField"          # 格式器类型: withField, easy, json, text
+timestamp_format: "2006-01-02 15:04:05.000"  # 时间戳格式
+disable_timestamp: false             # 是否禁用时间戳
+disable_level: false                 # 是否禁用日志级别
+disable_caller: true                 # 是否禁用调用者信息
+full_timestamp: false                # 是否显示完整时间戳
+log_format: "%time% - [%lvl%]: %msg%\n"  # 自定义日志格式（仅用于 easy 格式器）
 ```
 
 在代码中使用：
@@ -69,7 +93,8 @@ if err != nil {
 
 ```go
 type Settings struct {
-    OnlyMsg             bool          // 是否只输出消息内容，不包含时间戳等
+    // 基本配置
+    OnlyMsg             bool          // 废弃：仅输出消息，向后兼容
     Level               logrus.Level  // 日志级别（默认 InfoLevel）
     LogRootFPath        string        // 日志根目录（默认当前目录）
     LogNameBase         string        // 日志文件名前缀（默认 "logger"）
@@ -78,6 +103,16 @@ type Settings struct {
     MaxAgeDays          int           // 日志最大保存天数（默认7天）
     MaxSizeMB           int           // 文件大小限制(MB)，0表示不启用大小轮转
     UseHierarchicalPath bool          // 是否使用分层路径 YYYY/MM/DD（默认false）
+
+    // 格式器配置
+    FormatterType       string            // 格式器类型："withField", "easy", "json", "text"
+    TimestampFormat     string            // 时间戳格式（默认 "2006-01-02 15:04:05.000"）
+    CustomFormatter     logrus.Formatter  // 用户自定义格式器
+    DisableTimestamp    bool              // 是否禁用时间戳
+    DisableLevel        bool              // 是否禁用日志级别
+    DisableCaller       bool              // 是否禁用调用者信息
+    FullTimestamp       bool              // 是否显示完整时间戳
+    LogFormat           string            // 自定义日志格式（用于 easy-formatter）
 }
 ```
 
@@ -91,6 +126,82 @@ type Settings struct {
 - `error` - 错误信息
 - `fatal` - 致命错误，程序会退出
 - `panic` - 恐慌错误，程序会 panic
+
+## 格式器支持
+
+### WithField 格式器（默认）
+
+支持结构化字段的格式器，自动将 logrus 字段以 key=value 格式追加到日志后。
+
+```go
+// 使用 Settings 配置
+settings := logger.NewSettings()
+settings.FormatterType = logger.FormatterTypeWithField
+logger.SetLoggerSettings(settings)
+
+// 输出示例：2025-12-18 18:32:07.379 - [INFO]: 【实时通知】事件广播成功 operation=(a+b)-c result=123.45
+logger.WithField("operation", "(a+b)-c").
+       WithField("result", 123.45).
+       Info("【实时通知】事件广播成功")
+```
+
+### JSON 格式器
+
+输出 JSON 格式的日志，便于日志分析工具处理。
+
+```go
+settings.FormatterType = logger.FormatterTypeJSON
+logger.SetLoggerSettings(settings)
+
+// 输出示例：{"level":"info","msg":"用户登录","time":"2025-12-18T18:32:07.379+08:00","user_id":12345}
+logger.WithField("user_id", 12345).Info("用户登录")
+```
+
+### Easy 格式器
+
+兼容旧版本的格式器，支持自定义日志格式模板。
+
+```go
+settings.FormatterType = logger.FormatterTypeEasy
+settings.LogFormat = "%time% [%lvl%] %msg%\n"
+logger.SetLoggerSettings(settings)
+
+// 输出示例：2025-12-18 18:32:07.379 [INFO] 用户登录
+logger.Info("用户登录")
+```
+
+### Text 格式器
+
+使用 logrus 的原生文本格式器。
+
+```go
+settings.FormatterType = logger.FormatterTypeText
+logger.SetLoggerSettings(settings)
+
+// 输出示例：INFO[0000] 用户登录
+logger.Info("用户登录")
+```
+
+### 自定义格式器
+
+用户可以实现自己的格式器。
+
+```go
+import "github.com/sirupsen/logrus"
+
+// 实现自定义格式器
+type MyFormatter struct{}
+
+func (f *MyFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+    // 自定义格式逻辑
+    return []byte(fmt.Sprintf("[CUSTOM] %s: %s\n", entry.Level, entry.Message)), nil
+}
+
+// 使用自定义格式器
+settings := logger.NewSettings()
+settings.CustomFormatter = &MyFormatter{}
+logger.SetLoggerSettings(settings)
+```
 
 ## 日志存储格式
 
@@ -163,6 +274,20 @@ settings := logger.NewSettings()
 
 // 从 YAML 加载设置
 settings, err := logger.LoadSettingsFromYAML("config.yaml")
+
+// 设置自定义格式器
+logger.SetCustomFormatter(&MyFormatter{})
+```
+
+### 格式器常量
+
+```go
+const (
+    FormatterTypeWithField = "withField"  // 默认格式器，支持字段输出
+    FormatterTypeEasy      = "easy"       // 兼容旧版本的格式器
+    FormatterTypeJSON      = "json"       // JSON 格式器
+    FormatterTypeText      = "text"       // 文本格式器
+)
 ```
 
 ## 依赖

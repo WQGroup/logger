@@ -1,5 +1,7 @@
 package logger
 
+import "github.com/sirupsen/logrus"
+
 func Debugf(format string, args ...interface{}) {
 	GetLogger().Debugf(format, args...)
 }
@@ -73,4 +75,21 @@ func Fatalln(args ...interface{}) {
 }
 func Panicln(args ...interface{}) {
 	GetLogger().Panicln(args...)
+}
+
+// WithField 返回一个带有单个字段的 logrus.Entry
+func WithField(key string, value interface{}) *logrus.Entry {
+	return GetLogger().WithField(key, value)
+}
+
+// WithFields 返回一个带有多个字段的 logrus.Entry
+func WithFields(fields map[string]interface{}) *logrus.Entry {
+	return GetLogger().WithFields(fields)
+}
+
+// SetLoggerName 设置日志名称（向后兼容）
+func SetLoggerName(name string) {
+	settings := NewSettings()
+	settings.LogNameBase = name
+	SetLoggerSettings(settings)
 }

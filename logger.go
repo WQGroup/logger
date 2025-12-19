@@ -1,11 +1,13 @@
 package logger
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
@@ -57,17 +59,13 @@ func SetLoggerSettings(inSettings ...*Settings) {
 func NewLogHelper(settings *Settings) *logrus.Logger {
 
 	var err error
-	outputFormatNow := outputFormat
-	if settings.OnlyMsg == true {
-		// only msg
-		outputFormatNow = outputFormatOnlyMsg
-	}
+
+	// 使用格式器工厂创建格式器
+	factory := &FormatterFactory{}
+	formatter := factory.CreateFormatter(settings)
 
 	Logger := &logrus.Logger{
-		Formatter: &easy.Formatter{
-			TimestampFormat: "2006-01-02 15:04:05.000",
-			LogFormat:       outputFormatNow,
-		},
+		Formatter: formatter,
 	}
 
 	pathRoot := filepath.Join(settings.LogRootFPath, "Logs")
@@ -169,10 +167,15 @@ const (
 	logRootFPathDef     = "."
 	outputFormat        = "%time% - [%lvl%]: %msg%\n"
 	outputFormatOnlyMsg = "%msg%\n"
+	// 格式器类型常量
+	FormatterTypeWithField = "withField"
+	FormatterTypeEasy      = "easy"
+	FormatterTypeJSON      = "json"
+	FormatterTypeText      = "text"
 )
 
 type Settings struct {
-	OnlyMsg             bool          // 是否只输出消息内容
+	OnlyMsg             bool          // 废弃：仅输出消息，不包含时间戳等额外信息（向后兼容，内部映射到 FormatterType）
 	Level               logrus.Level  // 日志级别
 	LogRootFPath        string        // 日志根目录
 	LogNameBase         string        // 日志名称
@@ -181,6 +184,16 @@ type Settings struct {
 	MaxAgeDays          int
 	MaxSizeMB           int
 	UseHierarchicalPath bool          // 是否使用分层路径（YYYY/MM/DD）
+
+	// 新增的格式器配置字段
+	FormatterType       string            // 格式器类型："withField", "easy", "json", "text"
+	TimestampFormat     string            // 时间戳格式（默认 "2006-01-02 15:04:05.000"）
+	CustomFormatter     logrus.Formatter  // 用户自定义格式器
+	DisableTimestamp    bool              // 是否禁用时间戳
+	DisableLevel        bool              // 是否禁用日志级别
+	DisableCaller       bool              // 是否禁用调用者信息
+	FullTimestamp       bool              // 是否显示完整时间戳
+	LogFormat           string            // 自定义日志格式（用于 easy-formatter）
 }
 
 // NewSettings 创建一个新的日志设置
@@ -195,6 +208,16 @@ func NewSettings() *Settings {
 		MaxAgeDays:          7,
 		MaxSizeMB:           0,
 		UseHierarchicalPath: false, // 默认使用旧格式，保持向后兼容
+
+		// 新增字段的默认值
+		FormatterType:       FormatterTypeWithField, // 默认使用 withField 格式器
+		TimestampFormat:     "2006-01-02 15:04:05.000",
+		CustomFormatter:     nil,
+		DisableTimestamp:    false,
+		DisableLevel:        false,
+		DisableCaller:       true, // 默认不显示调用者信息，保持简洁
+		FullTimestamp:       false,
+		LogFormat:           "",
 	}
 }
 
@@ -203,6 +226,135 @@ var (
 	rotateLogsWriter    *rotatelogs.RotateLogs // 日志轮转记录器
 	currentLogFileFPath string                 // 当前日志文件路径
 )
+
+// WithFieldFormatter 自定义日志格式器，支持结构化字段输出
+// 输出格式：2025-12-18 18:32:07.379 - [INFO]: 【实时通知】事件广播成功 operation=(a+b)-c result=123.45
+type WithFieldFormatter struct {
+	TimestampFormat  string // 时间戳格式
+	DisableTimestamp bool   // 是否禁用时间戳
+	DisableLevel     bool   // 是否禁用日志级别
+	DisableCaller    bool   // 是否禁用调用者信息
+}
+
+// Format 实现 logrus.Formatter 接口
+func (f *WithFieldFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	var b *bytes.Buffer
+
+	if entry.Buffer != nil {
+		b = entry.Buffer
+	} else {
+		b = &bytes.Buffer{}
+	}
+
+	// 添加时间戳
+	if !f.DisableTimestamp {
+		timestamp := entry.Time.Format(f.TimestampFormat)
+		b.WriteString(timestamp)
+		b.WriteString(" - ")
+	}
+
+	// 添加日志级别
+	if !f.DisableLevel {
+		b.WriteString("[")
+		b.WriteString(strings.ToUpper(entry.Level.String()))
+		b.WriteString("]: ")
+	}
+
+	// 添加调用者信息
+	if !f.DisableCaller && entry.HasCaller() {
+		b.WriteString(fmt.Sprintf("%s:%d - ", entry.Caller.File, entry.Caller.Line))
+	}
+
+	// 添加消息
+	b.WriteString(entry.Message)
+
+	// 如果有字段，将它们附加到消息后面
+	if len(entry.Data) > 0 {
+		var fields []string
+		for k, v := range entry.Data {
+			fields = append(fields, fmt.Sprintf("%s=%v", k, v))
+		}
+		if len(fields) > 0 {
+			b.WriteString(" ")
+			b.WriteString(strings.Join(fields, " "))
+		}
+	}
+
+	b.WriteString("\n")
+	return b.Bytes(), nil
+}
+
+// FormatterFactory 格式器工厂
+type FormatterFactory struct{}
+
+// CreateFormatter 根据设置创建相应的格式器
+func (f *FormatterFactory) CreateFormatter(settings *Settings) logrus.Formatter {
+	// 优先使用自定义格式器
+	if settings.CustomFormatter != nil {
+		return settings.CustomFormatter
+	}
+
+	// 处理向后兼容：如果设置了 OnlyMsg，则使用 easy-formatter
+	formatterType := settings.FormatterType
+	if settings.OnlyMsg {
+		formatterType = FormatterTypeEasy
+	}
+
+	// 如果没有设置格式器类型，默认使用 withField
+	if formatterType == "" {
+		formatterType = FormatterTypeWithField
+	}
+
+	// 根据 FormatterType 创建格式器
+	switch formatterType {
+	case FormatterTypeJSON:
+		return &logrus.JSONFormatter{
+			TimestampFormat:  settings.TimestampFormat,
+			DisableTimestamp: settings.DisableTimestamp,
+		}
+	case FormatterTypeText:
+		return &logrus.TextFormatter{
+			TimestampFormat:  settings.TimestampFormat,
+			DisableTimestamp: settings.DisableTimestamp,
+			DisableColors:    true,
+			FullTimestamp:    settings.FullTimestamp,
+		}
+	case FormatterTypeEasy:
+		// 向后兼容 OnlyMsg
+		logFormat := settings.LogFormat
+		if logFormat == "" {
+			if settings.OnlyMsg {
+				logFormat = outputFormatOnlyMsg
+			} else {
+				logFormat = outputFormat
+			}
+		}
+		return &easy.Formatter{
+			TimestampFormat: settings.TimestampFormat,
+			LogFormat:       logFormat,
+		}
+	case FormatterTypeWithField:
+		fallthrough
+	default:
+		// 使用 WithFieldFormatter
+		return &WithFieldFormatter{
+			TimestampFormat:  settings.TimestampFormat,
+			DisableTimestamp: settings.DisableTimestamp,
+			DisableLevel:     settings.DisableLevel,
+			DisableCaller:    settings.DisableCaller,
+		}
+	}
+}
+
+// SetCustomFormatter 设置用户自定义格式器
+func SetCustomFormatter(formatter logrus.Formatter) {
+	if loggerBase == nil {
+		SetLoggerSettings(NewSettings())
+	}
+	settings := NewSettings()
+	settings.CustomFormatter = formatter
+	SetLoggerSettings(settings)
+}
 
 // isWindowsGUI 检测程序是否以Windows GUI模式运行
 func isWindowsGUI() bool {

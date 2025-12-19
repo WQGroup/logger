@@ -1,4 +1,4 @@
-package examples
+package main
 
 import (
 	"fmt"
@@ -90,29 +90,29 @@ func ExampleTextFormatter() {
 	fmt.Println()
 }
 
+// CustomFormatter 实现自定义格式器
+type CustomFormatter struct{}
+
+func (f *CustomFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	// 简单的自定义格式：[时间]级别: 消息 (key1=value1 key2=value2)
+	timeStr := entry.Time.Format("15:04:05")
+	msg := fmt.Sprintf("[%s] %s: %s", timeStr, entry.Level, entry.Message)
+
+	// 添加字段
+	if len(entry.Data) > 0 {
+		var fields []string
+		for k, v := range entry.Data {
+			fields = append(fields, fmt.Sprintf("%s=%v", k, v))
+		}
+		msg += fmt.Sprintf(" (%s)", fmt.Sprintf("%s", fields))
+	}
+
+	return []byte(msg + "\n"), nil
+}
+
 // ExampleCustomFormatter 演示自定义格式器的使用
 func ExampleCustomFormatter() {
 	fmt.Println("=== Custom Formatter Example ===")
-
-	// 实现自定义格式器
-	type CustomFormatter struct{}
-
-	func (f *CustomFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-		// 简单的自定义格式：[时间]级别: 消息 (key1=value1 key2=value2)
-		timeStr := entry.Time.Format("15:04:05")
-		msg := fmt.Sprintf("[%s] %s: %s", timeStr, entry.Level, entry.Message)
-
-		// 添加字段
-		if len(entry.Data) > 0 {
-			var fields []string
-			for k, v := range entry.Data {
-				fields = append(fields, fmt.Sprintf("%s=%v", k, v))
-			}
-			msg += fmt.Sprintf(" (%s)", fmt.Sprintf("%s", fields))
-		}
-
-		return []byte(msg + "\n"), nil
-	}
 
 	settings := logger.NewSettings()
 	settings.CustomFormatter = &CustomFormatter{}
@@ -174,4 +174,13 @@ disable_caller: true
 
 	fmt.Println("日志文件路径:", logger.LogLinkFileFPath())
 	fmt.Println()
+}
+
+// main 运行所有格式器示例
+func main() {
+	ExampleWithFieldFormatter()
+	ExampleJSONFormatter()
+	ExampleTextFormatter()
+	ExampleCustomFormatter()
+	ExampleFormatterFromYAML()
 }

@@ -18,7 +18,7 @@ func TestLoggerBaseFunctions(t *testing.T) {
 
 	// 创建一个新的日志器用于测试
 	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{} // 捕获输出
+	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
 	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
 	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
 
@@ -78,7 +78,7 @@ func TestLoggerBaseFormattedFunctions(t *testing.T) {
 
 	// 创建一个新的日志器用于测试
 	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{} // 捕获输出
+	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
 	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
 
 	// 测试所有格式化函数
@@ -135,7 +135,7 @@ func TestLoggerBaseLnFunctions(t *testing.T) {
 
 	// 创建一个新的日志器用于测试
 	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{} // 捕获输出
+	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
 	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
 
 	// 测试所有带 ln 的函数
@@ -191,7 +191,7 @@ func TestWithFieldFunction(t *testing.T) {
 
 	// 创建一个新的日志器用于测试
 	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{} // 捕获输出
+	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
 	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
 
 	// 测试 WithField
@@ -226,7 +226,7 @@ func TestWithFieldsFunction(t *testing.T) {
 
 	// 创建一个新的日志器用于测试
 	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{} // 捕获输出
+	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
 	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
 
 	// 测试 WithFields

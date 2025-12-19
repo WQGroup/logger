@@ -23,10 +23,12 @@ func TestConcurrentWrites(t *testing.T) {
 	}
 	defer os.RemoveAll(root)
 
-	// 保存原始状态
-	originalLogger := loggerBase
 	defer func() {
-		loggerBase = originalLogger
+		// 恢复原始状态
+		SetLoggerSettings(&Settings{
+			LogRootFPath: ".",
+			LogNameBase:  "logger",
+		})
 	}()
 
 	settings := NewSettings()
@@ -75,10 +77,13 @@ func TestConcurrentSetLoggerSettings(t *testing.T) {
 		t.Skip("Skipping concurrent test in short mode")
 	}
 
-	// 保存原始状态
-	originalLogger := loggerBase
+	// No need to save state here since we're testing concurrent access
 	defer func() {
-		loggerBase = originalLogger
+		// 恢复原始状态
+		SetLoggerSettings(&Settings{
+			LogRootFPath: ".",
+			LogNameBase:  "logger",
+		})
 	}()
 
 	const numGoroutines = 20
@@ -136,9 +141,15 @@ func TestConcurrentRotation(t *testing.T) {
 	defer os.RemoveAll(root)
 
 	// 保存原始状态
+	loggerMutex.Lock()
 	originalLogger := loggerBase
+	originalRotateWriter := rotateLogsWriter
+	originalCurrentFile := currentLogFileFPath
 	defer func() {
 		loggerBase = originalLogger
+		rotateLogsWriter = originalRotateWriter
+		currentLogFileFPath = originalCurrentFile
+		loggerMutex.Unlock()
 	}()
 
 	// 使用较小的大小以触发轮转
@@ -178,9 +189,15 @@ func TestConcurrentFormatterAccess(t *testing.T) {
 	}
 
 	// 保存原始状态
+	loggerMutex.Lock()
 	originalLogger := loggerBase
+	originalRotateWriter := rotateLogsWriter
+	originalCurrentFile := currentLogFileFPath
 	defer func() {
 		loggerBase = originalLogger
+		rotateLogsWriter = originalRotateWriter
+		currentLogFileFPath = originalCurrentFile
+		loggerMutex.Unlock()
 	}()
 
 	const numGoroutines = 30
@@ -229,9 +246,15 @@ func TestConcurrentHierarchicalPath(t *testing.T) {
 	defer os.RemoveAll(root)
 
 	// 保存原始状态
+	loggerMutex.Lock()
 	originalLogger := loggerBase
+	originalRotateWriter := rotateLogsWriter
+	originalCurrentFile := currentLogFileFPath
 	defer func() {
 		loggerBase = originalLogger
+		rotateLogsWriter = originalRotateWriter
+		currentLogFileFPath = originalCurrentFile
+		loggerMutex.Unlock()
 	}()
 
 	const numGoroutines = 20
@@ -278,9 +301,15 @@ func TestConcurrentLoggerBaseAccess(t *testing.T) {
 	}
 
 	// 保存原始状态
+	loggerMutex.Lock()
 	originalLogger := loggerBase
+	originalRotateWriter := rotateLogsWriter
+	originalCurrentFile := currentLogFileFPath
 	defer func() {
 		loggerBase = originalLogger
+		rotateLogsWriter = originalRotateWriter
+		currentLogFileFPath = originalCurrentFile
+		loggerMutex.Unlock()
 	}()
 
 	// 初始化日志器
@@ -351,9 +380,15 @@ func TestConcurrentWithFields(t *testing.T) {
 	defer os.RemoveAll(root)
 
 	// 保存原始状态
+	loggerMutex.Lock()
 	originalLogger := loggerBase
+	originalRotateWriter := rotateLogsWriter
+	originalCurrentFile := currentLogFileFPath
 	defer func() {
 		loggerBase = originalLogger
+		rotateLogsWriter = originalRotateWriter
+		currentLogFileFPath = originalCurrentFile
+		loggerMutex.Unlock()
 	}()
 
 	settings := NewSettings()
@@ -409,9 +444,15 @@ func TestConcurrentLevelChanges(t *testing.T) {
 	defer os.RemoveAll(root)
 
 	// 保存原始状态
+	loggerMutex.Lock()
 	originalLogger := loggerBase
+	originalRotateWriter := rotateLogsWriter
+	originalCurrentFile := currentLogFileFPath
 	defer func() {
 		loggerBase = originalLogger
+		rotateLogsWriter = originalRotateWriter
+		currentLogFileFPath = originalCurrentFile
+		loggerMutex.Unlock()
 	}()
 
 	settings := NewSettings()
@@ -525,7 +566,7 @@ func TestRaceConditionWithFormatterFactory(t *testing.T) {
 				FormatterTypeJSON,
 				FormatterTypeText,
 				FormatterTypeEasy,
-				"", // 测试空值
+				"",        // 测试空值
 				"invalid", // 测试无效值
 			}[id%6]
 

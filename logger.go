@@ -2,12 +2,12 @@ package logger
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
@@ -17,15 +17,36 @@ import (
 )
 
 func GetLogger() *logrus.Logger {
-
-	if loggerBase == nil {
-		// 如果没有设置日志记录器，则使用默认设置
-		SetLoggerSettings(NewSettings())
+	// 使用读锁进行快速检查
+	loggerMutex.RLock()
+	if loggerBase != nil {
+		defer loggerMutex.RUnlock()
+		return loggerBase
 	}
+	loggerMutex.RUnlock()
+
+	// 使用 sync.Once 确保只初始化一次
+	loggerOnce.Do(func() {
+		initDefaultLogger()
+	})
+
+	// 再次获取读锁并返回
+	loggerMutex.RLock()
+	defer loggerMutex.RUnlock()
 	return loggerBase
 }
 
+// initDefaultLogger 初始化默认日志器（需要在 loggerMutex 锁外调用）
+func initDefaultLogger() {
+	settings := NewSettings()
+
+	// 直接设置全局变量，避免再次获取锁
+	loggerBase, _ = NewLogHelperWithError(settings)
+}
+
 func SetLoggerSettings(inSettings ...*Settings) {
+	loggerMutex.Lock()
+	defer loggerMutex.Unlock()
 
 	var settings *Settings
 	if len(inSettings) > 0 {
@@ -53,12 +74,74 @@ func SetLoggerSettings(inSettings ...*Settings) {
 		settings.MaxAge = time.Duration(7*24) * time.Hour
 	}
 
-	loggerBase = NewLogHelper(settings)
+	// 关闭旧的资源（如果有的话）
+	closeOldResources()
+
+	var err error
+	loggerBase, err = NewLogHelperWithError(settings)
+	if err != nil {
+		// 为了向后兼容，在这里仍然打印错误并使用默认日志器
+		fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
+		loggerBase = logrus.New()
+	}
+}
+
+// SetLoggerSettingsWithError 设置日志配置，返回错误
+func SetLoggerSettingsWithError(inSettings ...*Settings) error {
+	loggerMutex.Lock()
+	defer loggerMutex.Unlock()
+
+	var settings *Settings
+	if len(inSettings) > 0 {
+		settings = inSettings[0]
+	} else {
+		settings = NewSettings()
+	}
+
+	if settings.LogRootFPath == "" {
+		settings.LogRootFPath = logRootFPathDef
+	}
+
+	if settings.LogNameBase == "" {
+		settings.LogNameBase = NameDef
+	}
+
+	if settings.RotationTime <= 0 {
+		settings.RotationTime = time.Duration(24) * time.Hour // 默认每天轮转一次
+	}
+
+	if settings.MaxAgeDays > 0 {
+		settings.MaxAge = time.Duration(settings.MaxAgeDays*24) * time.Hour
+	}
+	if settings.MaxAge <= 0 {
+		settings.MaxAge = time.Duration(7*24) * time.Hour
+	}
+
+	// 关闭旧的资源（如果有的话）
+	closeOldResources()
+
+	var err error
+	loggerBase, err = NewLogHelperWithError(settings)
+	return err
 }
 
 func NewLogHelper(settings *Settings) *logrus.Logger {
+	logger, err := NewLogHelperWithError(settings)
+	if err != nil {
+		// 向后兼容：如果出错，panic
+		panic(err)
+	}
+	return logger
+}
 
+// NewLogHelperWithError 创建日志助手，返回错误
+func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 	var err error
+
+	// 首先验证设置
+	if err = validateSettings(settings); err != nil {
+		return nil, fmt.Errorf("invalid settings: %w", err)
+	}
 
 	// 使用格式器工厂创建格式器
 	factory := &FormatterFactory{}
@@ -73,9 +156,9 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 		pathRoot = settings.LogRootFPath
 	}
 	if _, err = os.Stat(pathRoot); os.IsNotExist(err) {
-		err = os.MkdirAll(pathRoot, os.ModePerm)
+		err = os.MkdirAll(pathRoot, 0755) // 使用更安全的权限
 		if err != nil {
-			panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
+			return nil, fmt.Errorf("create log dir failed: %w", err)
 		}
 	}
 
@@ -96,9 +179,9 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 		}
 
 		if _, err = os.Stat(logDir); os.IsNotExist(err) {
-			err = os.MkdirAll(logDir, os.ModePerm)
+			err = os.MkdirAll(logDir, 0755) // 使用更安全的权限
 			if err != nil {
-				panic(errors.New(fmt.Sprintf("Create log dir error: %s", err.Error())))
+				return nil, fmt.Errorf("create log dir failed: %w", err)
 			}
 		}
 
@@ -128,7 +211,7 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 			rotatelogs.WithRotationTime(settings.RotationTime),
 		)
 		if err != nil {
-			panic(errors.New(fmt.Sprintf("Create log file error: %s", err.Error())))
+			return nil, fmt.Errorf("create log file failed: %w", err)
 		}
 		fileWriter = rotateLogsWriter
 		// 使用 rotatelogs 提供的当前文件名
@@ -145,21 +228,47 @@ func NewLogHelper(settings *Settings) *logrus.Logger {
 
 	_ = CleanupExpiredLogs(pathRoot, settings.MaxAgeDays)
 
-	return Logger
+	return Logger, nil
+}
+
+// closeOldResources 关闭旧的日志资源（需要在 loggerMutex 锁保护下调用）
+func closeOldResources() {
+	// 关闭 rotatelogs writer
+	// rotatelogs.RotateLogs 没有 Close 方法，所以我们只需要将其设为 nil
+	rotateLogsWriter = nil
+
+	// lumberjack.Logger 不需要显式关闭，它会在被垃圾回收时自动关闭
+	// 这里我们只需要清空路径
+	currentLogFileFPath = ""
 }
 
 // LogLinkFileFPath returns the path of the current log file.
 func LogLinkFileFPath() string {
+	loggerMutex.RLock()
+	defer loggerMutex.RUnlock()
 	return currentLogFileFPath
 }
 
 // CurrentFileName 当前日志文件名
 func CurrentFileName() string {
+	loggerMutex.RLock()
+	defer loggerMutex.RUnlock()
 
 	if rotateLogsWriter != nil {
 		return rotateLogsWriter.CurrentFileName()
 	}
 	return currentLogFileFPath
+}
+
+// Close 关闭日志器并释放资源
+func Close() error {
+	loggerMutex.Lock()
+	defer loggerMutex.Unlock()
+
+	closeOldResources()
+	loggerBase = nil
+
+	return nil
 }
 
 const (
@@ -183,17 +292,17 @@ type Settings struct {
 	MaxAge              time.Duration // 日志最大保存时间
 	MaxAgeDays          int
 	MaxSizeMB           int
-	UseHierarchicalPath bool          // 是否使用分层路径（YYYY/MM/DD）
+	UseHierarchicalPath bool // 是否使用分层路径（YYYY/MM/DD）
 
 	// 新增的格式器配置字段
-	FormatterType       string            // 格式器类型："withField", "easy", "json", "text"
-	TimestampFormat     string            // 时间戳格式（默认 "2006-01-02 15:04:05.000"）
-	CustomFormatter     logrus.Formatter  // 用户自定义格式器
-	DisableTimestamp    bool              // 是否禁用时间戳
-	DisableLevel        bool              // 是否禁用日志级别
-	DisableCaller       bool              // 是否禁用调用者信息
-	FullTimestamp       bool              // 是否显示完整时间戳
-	LogFormat           string            // 自定义日志格式（用于 easy-formatter）
+	FormatterType    string           // 格式器类型："withField", "easy", "json", "text"
+	TimestampFormat  string           // 时间戳格式（默认 "2006-01-02 15:04:05.000"）
+	CustomFormatter  logrus.Formatter // 用户自定义格式器
+	DisableTimestamp bool             // 是否禁用时间戳
+	DisableLevel     bool             // 是否禁用日志级别
+	DisableCaller    bool             // 是否禁用调用者信息
+	FullTimestamp    bool             // 是否显示完整时间戳
+	LogFormat        string           // 自定义日志格式（用于 easy-formatter）
 }
 
 // NewSettings 创建一个新的日志设置
@@ -210,14 +319,14 @@ func NewSettings() *Settings {
 		UseHierarchicalPath: false, // 默认使用旧格式，保持向后兼容
 
 		// 新增字段的默认值
-		FormatterType:       FormatterTypeWithField, // 默认使用 withField 格式器
-		TimestampFormat:     "2006-01-02 15:04:05.000",
-		CustomFormatter:     nil,
-		DisableTimestamp:    false,
-		DisableLevel:        false,
-		DisableCaller:       true, // 默认不显示调用者信息，保持简洁
-		FullTimestamp:       false,
-		LogFormat:           "",
+		FormatterType:    FormatterTypeWithField, // 默认使用 withField 格式器
+		TimestampFormat:  "2006-01-02 15:04:05.000",
+		CustomFormatter:  nil,
+		DisableTimestamp: false,
+		DisableLevel:     false,
+		DisableCaller:    true, // 默认不显示调用者信息，保持简洁
+		FullTimestamp:    false,
+		LogFormat:        "",
 	}
 }
 
@@ -225,6 +334,8 @@ var (
 	loggerBase          *logrus.Logger         // 日志基础记录器
 	rotateLogsWriter    *rotatelogs.RotateLogs // 日志轮转记录器
 	currentLogFileFPath string                 // 当前日志文件路径
+	loggerMutex         sync.RWMutex           // 保护全局变量的互斥锁
+	loggerOnce          sync.Once              // 确保只初始化一次
 )
 
 // WithFieldFormatter 自定义日志格式器，支持结构化字段输出
@@ -361,4 +472,93 @@ func isWindowsGUI() bool {
 	// 尝试获取标准输出句柄，如果失败则可能是GUI模式
 	_, err := os.Stderr.Stat()
 	return err != nil
+}
+
+// validateSettings 验证日志设置的合理性
+func validateSettings(settings *Settings) error {
+	if settings == nil {
+		return fmt.Errorf("settings cannot be nil")
+	}
+
+	// 验证路径
+	if err := validateLogPath(settings.LogRootFPath); err != nil {
+		return fmt.Errorf("invalid LogRootFPath: %w", err)
+	}
+
+	// 验证 MaxSizeMB
+	if settings.MaxSizeMB < 0 {
+		return fmt.Errorf("MaxSizeMB cannot be negative")
+	}
+	if settings.MaxSizeMB > 1024 { // 最大1GB
+		return fmt.Errorf("MaxSizeMB too large (max: 1024MB)")
+	}
+
+	// 验证 MaxAgeDays
+	if settings.MaxAgeDays < 0 {
+		return fmt.Errorf("MaxAgeDays cannot be negative")
+	}
+	if settings.MaxAgeDays > 365 { // 最大1年
+		return fmt.Errorf("MaxAgeDays too large (max: 365 days)")
+	}
+
+	// 验证 RotationTime
+	if settings.RotationTime < time.Minute {
+		return fmt.Errorf("RotationTime too small (min: 1 minute)")
+	}
+
+	// 验证日志名称
+	if settings.LogNameBase == "" {
+		return fmt.Errorf("LogNameBase cannot be empty")
+	}
+	// 检查是否包含非法字符
+	if strings.ContainsAny(settings.LogNameBase, `/:*?"<>|`) {
+		return fmt.Errorf("LogNameBase contains invalid characters")
+	}
+
+	return nil
+}
+
+// validateLogPath 验证日志路径的安全性
+func validateLogPath(path string) error {
+	if path == "" {
+		return nil // 空路径是允许的，会使用默认值
+	}
+
+	// 直接检查原始路径中的 .. 序列（在任何平台上都视为危险）
+	pathParts := strings.Split(path, "/")
+	for _, part := range pathParts {
+		if part == ".." {
+			return fmt.Errorf("path traversal detected")
+		}
+	}
+
+	// 同时检查 Windows 风格的反斜杠
+	pathParts = strings.Split(path, "\\")
+	for _, part := range pathParts {
+		if part == ".." {
+			return fmt.Errorf("path traversal detected")
+		}
+	}
+
+	// 规范化路径
+	cleanPath := filepath.Clean(path)
+
+	// 在Windows上检查绝对路径
+	if filepath.IsAbs(cleanPath) {
+		// 检查是否访问系统关键目录
+		lowerPath := strings.ToLower(cleanPath)
+		systemDirs := []string{
+			`c:\windows`,
+			`c:\program files`,
+			`c:\program files (x86)`,
+			`c:\programdata`,
+		}
+		for _, dir := range systemDirs {
+			if strings.HasPrefix(lowerPath, dir) {
+				return fmt.Errorf("cannot use system directory: %s", dir)
+			}
+		}
+	}
+
+	return nil
 }

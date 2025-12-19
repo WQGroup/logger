@@ -1,4 +1,39 @@
+# IDE and Editor files
 /.idea
+/.vscode
+*.swp
+*.swo
+*~
+*.sublime-*
+
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files and coverage
+*.out
+coverage.html
+coverage.txt
+test_dir
+
+# Temporary directories (wildcard for test temp dirs)
+C?temptest_*
+
+# Log files
+*.log
 /Logs
+
+# Workflow and templates
 /.spec-workflow
+
+# OS specific
 nul
+Thumbs.db
+.DS_Store
+
+# Go specific
+/vendor
+*.test
+*.prof

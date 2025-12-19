@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -12,9 +13,15 @@ import (
 // TestDirectoryCreationError 测试目录创建失败
 func TestDirectoryCreationError(t *testing.T) {
 	// 保存原始状态
+	loggerMutex.Lock()
 	originalLogger := loggerBase
+	originalRotateWriter := rotateLogsWriter
+	originalCurrentFile := currentLogFileFPath
 	defer func() {
 		loggerBase = originalLogger
+		rotateLogsWriter = originalRotateWriter
+		currentLogFileFPath = originalCurrentFile
+		loggerMutex.Unlock()
 	}()
 
 	// 测试在只读文件系统上的行为
@@ -144,7 +151,7 @@ func TestInvalidConfigurationError(t *testing.T) {
 		settings.LogRootFPath = root
 		settings.LogNameBase = "invalid_time"
 		settings.RotationTime = time.Nanosecond // 极短的轮转时间
-		settings.MaxSizeMB = 0 // 强制使用时间轮转
+		settings.MaxSizeMB = 0                  // 强制使用时间轮转
 
 		// 可能会导致 rotatelogs 错误
 		defer func() {
@@ -259,10 +266,14 @@ func TestLoggerStateError(t *testing.T) {
 
 	// 测试在未初始化状态下的操作
 	t.Run("Uninitialized_Logger", func(t *testing.T) {
-		// 重置所有全局变量
+		// 重置所有全局变量（需要锁保护）
+		loggerMutex.Lock()
 		loggerBase = nil
 		rotateLogsWriter = nil
 		currentLogFileFPath = ""
+		// 重置 sync.Once
+		loggerOnce = sync.Once{}
+		loggerMutex.Unlock()
 
 		// 调用 Info 应该会初始化默认日志器
 		Info("Test with uninitialized logger")
@@ -275,9 +286,12 @@ func TestLoggerStateError(t *testing.T) {
 
 	// 测试 CurrentFileName 在未初始化时
 	t.Run("CurrentFileName_Uninitialized", func(t *testing.T) {
+		loggerMutex.Lock()
 		loggerBase = nil
 		rotateLogsWriter = nil
 		currentLogFileFPath = ""
+		loggerOnce = sync.Once{}
+		loggerMutex.Unlock()
 
 		// 应该返回空字符串或默认值
 		fileName := CurrentFileName()
@@ -406,7 +420,7 @@ func TestErrorHandler(t *testing.T) {
 			settings: func() *Settings {
 				s := NewSettings()
 				s.MaxAgeDays = 36500 // 100年
-				s.MaxSizeMB = 10240    // 10GB
+				s.MaxSizeMB = 10240  // 10GB
 				s.RotationTime = time.Hour * 24 * 365
 				return s
 			},

@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🔧 Claude Code 交互规则
+
+### 开发环境说明
+- **使用语言**: 请使用中文回答问题
+- **操作系统**: 当前开发系统为 Windows
+- **编码规范**: 遵循项目已有的代码风格
+
+### 脚本编辑规则
+- **BAT 脚本**: 编辑 BAT 脚本时请避免使用中文字符，保持 ASCII 编码
+- **修改原则**: 在原有脚本基础上进行修复，除非必需，否则不要创建新的脚本文件
+- **注释语言**: 脚本中的注释可以使用中文
+
 ## 项目概述
 
 这是一个基于 logrus 的 Go 日志库，提供了日志轮转、自动清理和灵活配置等功能。特别适合需要长期运行的服务端应用程序。
@@ -9,26 +21,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 构建和测试命令
 
 ```powershell
-# 构建模块
+# Build module
 go build
 
-# 运行测试
+# Run tests
 go test -v
 
-# 运行测试并显示覆盖率
+# Run tests with coverage
 go test -v -cover
 
-# 运行特定测试
+# Run specific test
 go test -v -run TestCleanupExpired
 
-# 格式化代码
+# Format code
 go fmt
 
-# 检查代码规范
+# Check code specification
 go vet
 
-# 更新依赖
+# Update dependencies
 go mod tidy
+```
+
+### Windows 特定命令
+
+```powershell
+# Clean build cache
+go clean -cache
+
+# Run tests with race detection (if needed)
+go test -race -v
+
+# Build for Windows with specific architecture
+go build -o logger.exe
+
+# Install/update tools
+go install github.com/air-verse/air@latest
+```
+
+### 开发工作流
+
+```powershell
+# 1. 安装依赖
+go mod tidy
+
+# 2. 运行所有测试
+go test -v ./...
+
+# 3. 检查代码格式和规范
+go fmt ./...
+go vet ./...
+
+# 4. 构建项目
+go build
+
+# 5. 运行应用
+.\logger.exe
 ```
 
 ## 核心架构

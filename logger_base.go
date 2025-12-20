@@ -2,89 +2,102 @@ package logger
 
 import "github.com/sirupsen/logrus"
 
+// getLoggerInternal 获取当前日志器，内部使用，避免自动初始化
+func getLoggerInternal() *logrus.Logger {
+	loggerMutex.RLock()
+	logger := loggerBase
+	loggerMutex.RUnlock()
+
+	// 如果 loggerBase 为 nil，返回 GetLogger() 的结果来触发自动初始化
+	if logger == nil {
+		return GetLogger()
+	}
+	return logger
+}
+
 func Debugf(format string, args ...interface{}) {
-	GetLogger().Debugf(format, args...)
+	getLoggerInternal().Debugf(format, args...)
 }
 func Infof(format string, args ...interface{}) {
-	GetLogger().Infof(format, args...)
+	getLoggerInternal().Infof(format, args...)
 }
 func Printf(format string, args ...interface{}) {
-	GetLogger().Printf(format, args...)
+	getLoggerInternal().Printf(format, args...)
 }
 func Warnf(format string, args ...interface{}) {
-	GetLogger().Warnf(format, args...)
+	getLoggerInternal().Warnf(format, args...)
 }
 func Warningf(format string, args ...interface{}) {
-	GetLogger().Warningf(format, args...)
+	getLoggerInternal().Warningf(format, args...)
 }
 func Errorf(format string, args ...interface{}) {
-	GetLogger().Errorf(format, args...)
+	getLoggerInternal().Errorf(format, args...)
 }
 func Fatalf(format string, args ...interface{}) {
-	GetLogger().Fatalf(format, args...)
+	getLoggerInternal().Fatalf(format, args...)
 }
 func Panicf(format string, args ...interface{}) {
-	GetLogger().Panicf(format, args...)
+	getLoggerInternal().Panicf(format, args...)
 }
 
 func Debug(args ...interface{}) {
-	GetLogger().Debug(args...)
+	getLoggerInternal().Debug(args...)
 }
 func Info(args ...interface{}) {
-	GetLogger().Info(args...)
+	getLoggerInternal().Info(args...)
 }
 func Print(args ...interface{}) {
-	GetLogger().Print(args...)
+	getLoggerInternal().Print(args...)
 }
 func Warn(args ...interface{}) {
-	GetLogger().Warn(args...)
+	getLoggerInternal().Warn(args...)
 }
 func Warning(args ...interface{}) {
-	GetLogger().Warning(args...)
+	getLoggerInternal().Warning(args...)
 }
 func Error(args ...interface{}) {
-	GetLogger().Error(args...)
+	getLoggerInternal().Error(args...)
 }
 func Fatal(args ...interface{}) {
-	GetLogger().Fatal(args...)
+	getLoggerInternal().Fatal(args...)
 }
 func Panic(args ...interface{}) {
-	GetLogger().Panic(args...)
+	getLoggerInternal().Panic(args...)
 }
 
 func Debugln(args ...interface{}) {
-	GetLogger().Debugln(args...)
+	getLoggerInternal().Debugln(args...)
 }
 func Infoln(args ...interface{}) {
-	GetLogger().Infoln(args...)
+	getLoggerInternal().Infoln(args...)
 }
 func Println(args ...interface{}) {
-	GetLogger().Println(args...)
+	getLoggerInternal().Println(args...)
 }
 func Warnln(args ...interface{}) {
-	GetLogger().Warnln(args...)
+	getLoggerInternal().Warnln(args...)
 }
 func Warningln(args ...interface{}) {
-	GetLogger().Warningln(args...)
+	getLoggerInternal().Warningln(args...)
 }
 func Errorln(args ...interface{}) {
-	GetLogger().Errorln(args...)
+	getLoggerInternal().Errorln(args...)
 }
 func Fatalln(args ...interface{}) {
-	GetLogger().Fatalln(args...)
+	getLoggerInternal().Fatalln(args...)
 }
 func Panicln(args ...interface{}) {
-	GetLogger().Panicln(args...)
+	getLoggerInternal().Panicln(args...)
 }
 
 // WithField 返回一个带有单个字段的 logrus.Entry
 func WithField(key string, value interface{}) *logrus.Entry {
-	return GetLogger().WithField(key, value)
+	return getLoggerInternal().WithField(key, value)
 }
 
 // WithFields 返回一个带有多个字段的 logrus.Entry
 func WithFields(fields map[string]interface{}) *logrus.Entry {
-	return GetLogger().WithFields(fields)
+	return getLoggerInternal().WithFields(fields)
 }
 
 // SetLoggerName 设置日志名称（向后兼容）

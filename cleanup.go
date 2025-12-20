@@ -18,6 +18,7 @@ func CleanupExpiredLogs(root string, days int) error {
 	// 处理分层路径结构 (YYYY/MM/DD)
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// 记录错误但继续处理其他目录
 			return nil
 		}
 		if !d.IsDir() {
@@ -25,6 +26,7 @@ func CleanupExpiredLogs(root string, days int) error {
 		}
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
+			// 记录错误但继续处理其他目录
 			return nil
 		}
 
@@ -92,7 +94,10 @@ func cleanupEmptyParents(dirPath, root string) {
 	}
 
 	if isEmpty(pm) {
-		_ = os.Remove(pm)
+		// 记录删除错误但继续清理
+		if err := os.Remove(pm); err != nil {
+			// 静默处理，因为这是清理操作
+		}
 		cleanupEmptyParents(pm, root)
 	}
 }

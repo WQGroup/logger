@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -49,7 +49,7 @@ func parseLevel(s string) logrus.Level {
 }
 
 func LoadSettingsFromYAML(path string) (*Settings, error) {
-	b, err := ioutil.ReadFile(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

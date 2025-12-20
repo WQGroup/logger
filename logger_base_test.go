@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -17,10 +18,12 @@ func TestLoggerBaseFunctions(t *testing.T) {
 	}()
 
 	// 创建一个新的日志器用于测试
-	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
-	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
-	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	testLogger := logrus.New()
+	testLogger.Out = &bytes.Buffer{}       // 捕获输出
+	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+
+	// 直接设置全局变量以绕过 GetLogger() 的自动初始化
+	loggerBase = testLogger
 
 	// 测试所有格式化函数
 	testCases := []struct {
@@ -77,9 +80,10 @@ func TestLoggerBaseFormattedFunctions(t *testing.T) {
 	}()
 
 	// 创建一个新的日志器用于测试
-	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
-	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	testLogger := logrus.New()
+	testLogger.Out = &bytes.Buffer{}       // 捕获输出
+	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerBase = testLogger
 
 	// 测试所有格式化函数
 	testCases := []struct {
@@ -134,9 +138,10 @@ func TestLoggerBaseLnFunctions(t *testing.T) {
 	}()
 
 	// 创建一个新的日志器用于测试
-	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
-	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	testLogger := logrus.New()
+	testLogger.Out = &bytes.Buffer{}       // 捕获输出
+	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerBase = testLogger
 
 	// 测试所有带 ln 的函数
 	testCases := []struct {
@@ -190,9 +195,10 @@ func TestWithFieldFunction(t *testing.T) {
 	}()
 
 	// 创建一个新的日志器用于测试
-	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
-	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	testLogger := logrus.New()
+	testLogger.Out = &bytes.Buffer{}       // 捕获输出
+	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerBase = testLogger
 
 	// 测试 WithField
 	entry := WithField("key", "value")
@@ -225,9 +231,10 @@ func TestWithFieldsFunction(t *testing.T) {
 	}()
 
 	// 创建一个新的日志器用于测试
-	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{}       // 捕获输出
-	loggerBase.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	testLogger := logrus.New()
+	testLogger.Out = &bytes.Buffer{}       // 捕获输出
+	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerBase = testLogger
 
 	// 测试 WithFields
 	fields := logrus.Fields{
@@ -300,8 +307,13 @@ func TestSetLoggerNameFunction(t *testing.T) {
 func TestLoggerBaseNilHandling(t *testing.T) {
 	// 保存原始状态
 	originalLogger := loggerBase
+	// 需要重置 loggerOnce 以确保每次测试都能正确初始化
+	var originalOnce sync.Once
+	loggerOnce = originalOnce
 	defer func() {
 		loggerBase = originalLogger
+		// 恢复 loggerOnce 以便后续测试正常工作
+		loggerOnce = sync.Once{}
 	}()
 
 	// 将日志器设置为 nil
@@ -373,10 +385,14 @@ func TestLoggerBaseLevelFiltering(t *testing.T) {
 	settings.LogRootFPath = root
 	settings.LogNameBase = "level_filter_test"
 	settings.Level = logrus.WarnLevel
-	SetLoggerSettings(settings)
 
-	logger := GetLogger()
-	logger.Out = &bytes.Buffer{} // 捕获输出
+	// 直接创建日志器而不使用 SetLoggerSettings，避免被覆盖
+	testLogger, err := NewLogHelperWithError(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loggerBase = testLogger
+	loggerBase.Out = &bytes.Buffer{} // 捕获输出
 
 	// 写入不同级别的日志
 	Debug("Debug message - should not appear")
@@ -385,7 +401,7 @@ func TestLoggerBaseLevelFiltering(t *testing.T) {
 	Error("Error message - should appear")
 
 	// 验证输出
-	output := logger.Out.(*bytes.Buffer).String()
+	output := loggerBase.Out.(*bytes.Buffer).String()
 	if contains(output, "Debug message") {
 		t.Error("Debug message should not appear when level is Warn")
 	}
@@ -413,9 +429,10 @@ func TestLoggerBaseConcurrentAccess(t *testing.T) {
 	}()
 
 	// 初始化日志器
-	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{}
-	loggerBase.SetLevel(logrus.DebugLevel)
+	testLogger := logrus.New()
+	testLogger.Out = &bytes.Buffer{}
+	testLogger.SetLevel(logrus.DebugLevel)
+	loggerBase = testLogger
 
 	const numGoroutines = 20
 	const numCalls = 50
@@ -464,8 +481,9 @@ func TestLoggerBaseComplexMessage(t *testing.T) {
 	}()
 
 	// 创建日志器
-	loggerBase = logrus.New()
-	loggerBase.Out = &bytes.Buffer{}
+	testLogger := logrus.New()
+	testLogger.Out = &bytes.Buffer{}
+	loggerBase = testLogger
 
 	// 测试各种复杂消息
 	testCases := []struct {

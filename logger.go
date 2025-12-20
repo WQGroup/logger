@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
@@ -17,31 +19,16 @@ import (
 )
 
 func GetLogger() *logrus.Logger {
-	// 使用读锁进行快速检查
-	loggerMutex.RLock()
-	if loggerBase != nil {
-		defer loggerMutex.RUnlock()
-		return loggerBase
-	}
-	loggerMutex.RUnlock()
-
-	// 使用 sync.Once 确保只初始化一次
+	// 使用 sync.Once 确保只初始化一次，这是线程安全的
 	loggerOnce.Do(func() {
-		initDefaultLogger()
+		settings := NewSettings()
+		loggerBase, _ = NewLogHelperWithError(settings)
 	})
 
-	// 再次获取读锁并返回
+	// 获取读锁并返回
 	loggerMutex.RLock()
 	defer loggerMutex.RUnlock()
 	return loggerBase
-}
-
-// initDefaultLogger 初始化默认日志器（需要在 loggerMutex 锁外调用）
-func initDefaultLogger() {
-	settings := NewSettings()
-
-	// 直接设置全局变量，避免再次获取锁
-	loggerBase, _ = NewLogHelperWithError(settings)
 }
 
 func SetLoggerSettings(inSettings ...*Settings) {
@@ -156,7 +143,7 @@ func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 		pathRoot = settings.LogRootFPath
 	}
 	if _, err = os.Stat(pathRoot); os.IsNotExist(err) {
-		err = os.MkdirAll(pathRoot, 0755) // 使用更安全的权限
+		err = os.MkdirAll(pathRoot, 0750) // 使用更安全的权限：所有者读写执行，组和其他用户只读
 		if err != nil {
 			return nil, fmt.Errorf("create log dir failed: %w", err)
 		}
@@ -179,7 +166,7 @@ func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 		}
 
 		if _, err = os.Stat(logDir); os.IsNotExist(err) {
-			err = os.MkdirAll(logDir, 0755) // 使用更安全的权限
+			err = os.MkdirAll(logDir, 0750) // 使用更安全的权限：所有者读写执行，组和其他用户只读
 			if err != nil {
 				return nil, fmt.Errorf("create log dir failed: %w", err)
 			}
@@ -226,7 +213,11 @@ func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 		Logger.SetOutput(io.MultiWriter(os.Stderr, fileWriter))
 	}
 
-	_ = CleanupExpiredLogs(pathRoot, settings.MaxAgeDays)
+	// 记录清理错误，但不影响日志器的创建
+	if err := CleanupExpiredLogs(pathRoot, settings.MaxAgeDays); err != nil {
+		// 使用刚创建的日志器记录错误，避免循环依赖
+		Logger.Warnf("Failed to cleanup expired logs: %v", err)
+	}
 
 	return Logger, nil
 }
@@ -469,9 +460,27 @@ func SetCustomFormatter(formatter logrus.Formatter) {
 
 // isWindowsGUI 检测程序是否以Windows GUI模式运行
 func isWindowsGUI() bool {
-	// 尝试获取标准输出句柄，如果失败则可能是GUI模式
-	_, err := os.Stderr.Stat()
-	return err != nil
+	// 检查是否在Windows系统上
+	if runtime.GOOS != "windows" {
+		return false
+	}
+
+	// 尝试获取标准错误句柄，如果失败则可能是GUI模式
+	// 但需要更精确的错误检查，而不是任何错误都认为是GUI模式
+	fileInfo, err := os.Stderr.Stat()
+	if err != nil {
+		// 检查具体的错误类型，只有当错误是由于没有控制台时才返回true
+		if pathErr, ok := err.(*os.PathError); ok {
+			// Windows GUI模式下，尝试访问stderr通常会返回 "The handle is invalid" 错误
+			return pathErr.Err == syscall.EINVAL
+		}
+		// 其他类型的错误不认为是GUI模式
+		return false
+	}
+
+	// 如果能获取到文件信息，检查是否是字符设备
+	// 在控制台模式下，stderr通常是字符设备
+	return (fileInfo.Mode() & os.ModeCharDevice) == 0
 }
 
 // validateSettings 验证日志设置的合理性

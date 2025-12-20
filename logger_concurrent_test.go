@@ -115,7 +115,10 @@ func TestConcurrentSetLoggerSettings(t *testing.T) {
 	wg.Wait()
 
 	// 验证最终状态是有效的
-	logger := GetLogger()
+	logger, err := GetLogger()
+	if err != nil {
+		t.Errorf("Failed to get logger: %v", err)
+	}
 	if logger == nil {
 		t.Error("Logger should be initialized after concurrent settings")
 	}
@@ -289,7 +292,11 @@ func TestConcurrentLoggerBaseAccess(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				logger := GetLogger()
+				logger, err := GetLogger()
+				if err != nil {
+					t.Errorf("Goroutine %d: GetLogger failed: %v", id, err)
+					return
+				}
 				if logger == nil {
 					t.Errorf("Goroutine %d: GetLogger returned nil", id)
 					return
@@ -435,7 +442,11 @@ func TestConcurrentLevelChanges(t *testing.T) {
 				SetLoggerSettings(settings)
 
 				// 写入不同级别的日志
-				logger := GetLogger()
+				logger, err := GetLogger()
+				if err != nil {
+					t.Errorf("Goroutine %d: GetLogger failed: %v", i, err)
+					return
+				}
 				logger.Trace("Trace message")
 				logger.Debug("Debug message")
 				logger.Info("Info message")
@@ -468,7 +479,11 @@ func TestConcurrentGetLogger(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 
-			logger := GetLogger()
+			logger, err := GetLogger()
+			if err != nil {
+				t.Errorf("Goroutine %d: GetLogger failed: %v", id, err)
+				return
+			}
 			if logger == nil {
 				t.Errorf("Goroutine %d: GetLogger returned nil", id)
 				return

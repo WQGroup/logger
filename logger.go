@@ -2,6 +2,7 @@ package logger
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,17 +19,30 @@ import (
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
-func GetLogger() *logrus.Logger {
-	// 使用 sync.Once 确保只初始化一次，这是线程安全的
+func GetLogger() (*logrus.Logger, error) {
+	var initErr error
 	loggerOnce.Do(func() {
 		settings := NewSettings()
-		loggerBase, _ = NewLogHelperWithError(settings)
+		loggerBase, initErr = NewLogHelperWithError(settings)
 	})
 
-	// 获取读锁并返回
+	if initErr != nil {
+		return nil, fmt.Errorf("logger initialization failed: %w", initErr)
+	}
+
 	loggerMutex.RLock()
 	defer loggerMutex.RUnlock()
-	return loggerBase
+
+	if loggerBase == nil {
+		return nil, errors.New("logger not initialized")
+	}
+	return loggerBase, nil
+}
+
+// GetLoggerUnsafe 保持向后兼容的包装函数，忽略错误
+func GetLoggerUnsafe() *logrus.Logger {
+	logger, _ := GetLogger()
+	return logger
 }
 
 func SetLoggerSettings(inSettings ...*Settings) {
@@ -62,7 +76,10 @@ func SetLoggerSettings(inSettings ...*Settings) {
 	}
 
 	// 关闭旧的资源（如果有的话）
-	closeOldResources()
+	if err := closeOldResources(); err != nil {
+		// 记录错误但不阻止设置继续进行
+		fmt.Fprintf(os.Stderr, "Warning: Failed to close old resources: %v\n", err)
+	}
 
 	var err error
 	loggerBase, err = NewLogHelperWithError(settings)
@@ -105,7 +122,10 @@ func SetLoggerSettingsWithError(inSettings ...*Settings) error {
 	}
 
 	// 关闭旧的资源（如果有的话）
-	closeOldResources()
+	if err := closeOldResources(); err != nil {
+		// 记录错误但不阻止设置继续进行
+		fmt.Fprintf(os.Stderr, "Warning: Failed to close old resources: %v\n", err)
+	}
 
 	var err error
 	loggerBase, err = NewLogHelperWithError(settings)
@@ -225,12 +245,13 @@ func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 }
 
 // closeOldResources 关闭旧的日志资源（需要在 loggerMutex 锁保护下调用）
-func closeOldResources() {
+func closeOldResources() error {
+	var closeErrors []error
+
 	// 关闭 lumberjack writer（如果存在）
 	if lumberjackWriter != nil {
 		if err := lumberjackWriter.Close(); err != nil {
-			// 记录关闭错误但不阻止其他清理操作
-			fmt.Fprintf(os.Stderr, "Warning: Failed to close lumberjack writer: %v\n", err)
+			closeErrors = append(closeErrors, fmt.Errorf("failed to close lumberjack writer: %w", err))
 		}
 		lumberjackWriter = nil
 	}
@@ -241,6 +262,11 @@ func closeOldResources() {
 
 	// 清空路径
 	currentLogFileFPath = ""
+
+	if len(closeErrors) > 0 {
+		return fmt.Errorf("close old resources errors: %v", closeErrors)
+	}
+	return nil
 }
 
 // LogLinkFileFPath returns the path of the current log file.
@@ -256,12 +282,24 @@ func Close() error {
 	loggerMutex.Lock()
 	defer loggerMutex.Unlock()
 
+	// 防止重复关闭
+	if loggerBase == nil && lumberjackWriter == nil && rotateLogsWriter == nil {
+		return nil
+	}
+
+	var closeErrors []error
+
 	// 关闭所有资源
-	closeOldResources()
+	if err := closeOldResources(); err != nil {
+		closeErrors = append(closeErrors, err)
+	}
 
 	// 清理 logger 实例
 	loggerBase = nil
 
+	if len(closeErrors) > 0 {
+		return fmt.Errorf("close errors: %v", closeErrors)
+	}
 	return nil
 }
 
@@ -342,6 +380,11 @@ var (
 	currentLogFileFPath string                 // 当前日志文件路径
 	loggerMutex         sync.RWMutex           // 保护全局变量的互斥锁
 	loggerOnce          sync.Once              // 确保只初始化一次
+
+	// Windows GUI 检测缓存
+	isGUICached     bool
+	isGUICachedValue bool
+	isGUICachedOnce  sync.Once
 )
 
 // WithFieldFormatter 自定义日志格式器，支持结构化字段输出
@@ -475,27 +518,32 @@ func SetCustomFormatter(formatter logrus.Formatter) {
 
 // isWindowsGUI 检测程序是否以Windows GUI模式运行
 func isWindowsGUI() bool {
-	// 检查是否在Windows系统上
+	isGUICachedOnce.Do(func() {
+		isGUICachedValue = checkWindowsGUIInternal()
+	})
+	return isGUICachedValue
+}
+
+func checkWindowsGUIInternal() bool {
 	if runtime.GOOS != "windows" {
 		return false
 	}
 
-	// 尝试获取标准错误句柄，如果失败则可能是GUI模式
-	// 但需要更精确的错误检查，而不是任何错误都认为是GUI模式
 	fileInfo, err := os.Stderr.Stat()
 	if err != nil {
-		// 检查具体的错误类型，只有当错误是由于没有控制台时才返回true
 		if pathErr, ok := err.(*os.PathError); ok {
-			// Windows GUI模式下，尝试访问stderr通常会返回 "The handle is invalid" 错误
-			return pathErr.Err == syscall.EINVAL
+			// 检查更多 Windows GUI 模式下的错误类型
+			switch pathErr.Err {
+			case syscall.EINVAL:
+				return true
+			}
 		}
-		// 其他类型的错误不认为是GUI模式
 		return false
 	}
 
-	// 如果能获取到文件信息，检查是否是字符设备
-	// 在控制台模式下，stderr通常是字符设备
-	return (fileInfo.Mode() & os.ModeCharDevice) == 0
+	// 更准确的设备类型检查
+	mode := fileInfo.Mode()
+	return (mode & os.ModeDevice) != 0 && (mode & os.ModeCharDevice) == 0
 }
 
 // validateSettings 验证日志设置的合理性

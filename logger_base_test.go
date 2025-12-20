@@ -287,7 +287,11 @@ func TestSetLoggerNameFunction(t *testing.T) {
 	SetLoggerName(testName)
 
 	// 验证日志器已创建
-	logger := GetLogger()
+	logger, err := GetLogger()
+	if err != nil {
+		t.Errorf("Failed to get logger: %v", err)
+		return
+	}
 	if logger == nil {
 		t.Error("Logger should be created after SetLoggerName")
 		return

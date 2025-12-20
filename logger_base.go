@@ -1,28 +1,45 @@
 package logger
 
-import "github.com/sirupsen/logrus"
+import (
+	"fmt"
+	"os"
+	"github.com/sirupsen/logrus"
+)
 
 // getLoggerInternal 获取当前日志器，内部使用，避免自动初始化
+// 为保持向后兼容性，此函数忽略错误，在初始化失败时会创建默认日志器
 func getLoggerInternal() *logrus.Logger {
-	// 使用双重检查锁定模式确保线程安全
-	loggerMutex.RLock()
-	logger := loggerBase
-	loggerMutex.RUnlock()
-
-	if logger == nil {
-		// 需要初始化，获取写锁
-		loggerMutex.Lock()
-		defer loggerMutex.Unlock()
-
-		// 双重检查：在获取写锁后再次检查
-		if loggerBase == nil {
-			// 直接调用初始化逻辑，避免重复调用 GetLogger()
-			settings := NewSettings()
-			loggerBase, _ = NewLogHelperWithError(settings)
-		}
-		return loggerBase
+	logger, err := getLoggerInternalWithError()
+	if err != nil {
+		// 如果初始化失败，创建一个默认的日志器并打印错误到 stderr
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		logger = logrus.New()
 	}
 	return logger
+}
+
+// getLoggerInternalWithError 获取当前日志器，返回错误信息
+func getLoggerInternalWithError() (*logrus.Logger, error) {
+	// 快速路径：无锁读取
+	if logger := loggerBase; logger != nil {
+		return logger, nil
+	}
+
+	// 慢速路径：需要初始化
+	loggerMutex.Lock()
+	defer loggerMutex.Unlock()
+
+	// 双重检查
+	if loggerBase == nil {
+		settings := NewSettings()
+		logger, err := NewLogHelperWithError(settings)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize logger: %w", err)
+		}
+		loggerBase = logger
+	}
+
+	return loggerBase, nil
 }
 
 func Debugf(format string, args ...interface{}) {

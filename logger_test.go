@@ -48,7 +48,7 @@ func resetState() {
 	loggerMutex.Lock()
 	defer loggerMutex.Unlock()
 
-	closeOldResources()
+	_ = closeOldResources() // 忽略错误，因为这是测试清理代码
 	loggerBase = nil
 	rotateLogsWriter = nil
 	currentLogFileFPath = ""

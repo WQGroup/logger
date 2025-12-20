@@ -1,7 +1,11 @@
 package logger
 
 import (
+	"runtime"
+	"sync"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 // TestP0FixesValidation 验证所有P0修复是否正常工作
@@ -97,4 +101,105 @@ func TestP0FixesValidation(t *testing.T) {
 			t.Errorf("Valid settings should not return error: %v", err)
 		}
 	})
+}
+
+// TestGetLoggerErrorHandling 测试 GetLogger() 错误处理修复
+func TestGetLoggerErrorHandling(t *testing.T) {
+	// 重置状态
+	resetState()
+
+	// 测试正常初始化
+	logger, err := GetLogger()
+	if err != nil {
+		t.Errorf("GetLogger() failed: %v", err)
+	}
+	if logger == nil {
+		t.Error("GetLogger() returned nil logger")
+	}
+
+	// 测试多次调用应该返回相同的实例
+	logger2, err2 := GetLogger()
+	if err2 != nil {
+		t.Errorf("Second GetLogger() failed: %v", err2)
+	}
+	if logger != logger2 {
+		t.Error("GetLogger() should return the same instance")
+	}
+}
+
+// TestGetLoggerUnsafeBackwardCompatibility 测试向后兼容性包装函数
+func TestGetLoggerUnsafeBackwardCompatibility(t *testing.T) {
+	// 重置状态
+	resetState()
+
+	// GetLoggerUnsafe 应该总是返回一个非 nil 的 logger
+	logger := GetLoggerUnsafe()
+	if logger == nil {
+		t.Error("GetLoggerUnsafe() should never return nil")
+	}
+}
+
+// TestConcurrentInitializationRaceCondition 测试并发初始化竞态条件修复
+func TestConcurrentInitializationRaceCondition(t *testing.T) {
+	// 重置状态
+	resetState()
+
+	const numGoroutines = 100
+	var wg sync.WaitGroup
+	loggers := make([]*logrus.Logger, 0, numGoroutines)
+	var mu sync.Mutex
+
+	// 并发调用 GetLogger 进行初始化
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			logger, err := GetLogger()
+			if err != nil {
+				t.Errorf("GetLogger failed in goroutine: %v", err)
+				return
+			}
+			if logger == nil {
+				t.Error("GetLogger returned nil in goroutine")
+				return
+			}
+
+			mu.Lock()
+			loggers = append(loggers, logger)
+			mu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+
+	// 验证所有 goroutine 获得的是同一个实例
+	if len(loggers) != numGoroutines {
+		t.Errorf("Expected %d loggers, got %d", numGoroutines, len(loggers))
+	}
+
+	firstLogger := loggers[0]
+	for i, logger := range loggers {
+		if logger != firstLogger {
+			t.Errorf("Logger at index %d is different from first logger", i)
+		}
+	}
+}
+
+// TestWindowsGUIDetectionCaching 测试 Windows GUI 检测缓存
+func TestWindowsGUIDetectionCaching(t *testing.T) {
+	// 测试 Windows GUI 检测缓存
+	result1 := isWindowsGUI()
+	result2 := isWindowsGUI()
+
+	// 多次调用应该返回相同的结果（缓存）
+	if result1 != result2 {
+		t.Error("isWindowsGUI() should return consistent results (caching)")
+	}
+
+	// 在非 Windows 系统上应该返回 false
+	if runtime.GOOS != "windows" && result1 {
+		t.Error("isWindowsGUI() should return false on non-Windows systems")
+	}
+
+	t.Logf("isWindowsGUI() result: %v (OS: %s)", result1, runtime.GOOS)
 }

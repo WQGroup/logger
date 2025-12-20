@@ -40,6 +40,16 @@ logger.WithFields(map[string]interface{}{
 // 输出：2024-01-01 12:00:00.123 - [INFO]: 认证成功 module=auth action=login user=john
 ```
 
+### 示例代码
+
+查看 [examples](./examples) 目录获取完整的使用示例：
+
+- [Basic Demo](./examples/demo) - 基本功能和格式器演示
+- [Formatter Demo](./examples/formatter_demo) - 各种格式器的详细使用
+- [Rotation Demo](./examples/rotation_demo) - 日志轮转和自动清理功能
+- [Concurrent Demo](./examples/concurrent_demo) - 并发安全演示
+- [GUI Demo](./examples/gui_demo) - Windows GUI 模式使用
+
 ### 通过 Settings 配置
 
 ```go
@@ -163,12 +173,19 @@ logger.WithField("user_id", 12345).Info("用户登录")
 
 ```go
 settings.FormatterType = logger.FormatterTypeEasy
-settings.LogFormat = "%time% [%lvl%] %msg%\n"
+settings.LogFormat = "%time% [%lvl%] %msg%\n"  // 自定义格式模板
+settings.TimestampFormat = "2006-01-02 15:04:05.000"  // 时间戳格式
 logger.SetLoggerSettings(settings)
 
 // 输出示例：2025-12-18 18:32:07.379 [INFO] 用户登录
 logger.Info("用户登录")
 ```
+
+支持的占位符：
+- `%time%` - 时间戳
+- `%lvl%` - 日志级别
+- `%msg%` - 日志消息
+- `%fields%` - 结构化字段
 
 ### Text 格式器
 
@@ -237,6 +254,7 @@ logger.SetLoggerSettings(settings)
 - 默认每24小时创建一个新的日志文件
 - 文件名格式：`logger--YYYYMMDDHHMM--.log`
 - 自动删除超过 MaxAgeDays 天数的日志文件
+- 可通过 `RotationTime` 设置轮转间隔
 
 ### 大小轮转
 当设置 `MaxSizeMB > 0` 时：
@@ -244,6 +262,17 @@ logger.SetLoggerSettings(settings)
 - 使用 lumberjack 进行轮转
 - 文件名格式：`logger.log`
 - 文件名后会自动添加序号，如 `logger-2024-01-01.log.1`
+- 支持同时使用时间和大小轮转策略
+
+### 示例配置
+```go
+settings := logger.NewSettings()
+settings.RotationTime = 24 * time.Hour      // 24小时轮转一次
+settings.MaxSizeMB = 100                    // 文件超过100MB时轮转
+settings.MaxAgeDays = 30                    // 保存30天的日志
+settings.UseHierarchicalPath = true         // 使用分层路径 YYYY/MM/DD
+logger.SetLoggerSettings(settings)
+```
 
 ## API 参考
 

@@ -16,6 +16,16 @@ examples/
 │   ├── formatter_examples.exe          # 编译后的可执行文件
 │   └── logs/                           # 日志输出目录
 │       └── *.log                       # 各种格式的日志文件
+├── rotation_demo/                      # 日志轮转示例
+│   ├── README.md                       # 轮转示例说明
+│   ├── rotation_demo.go                # 轮转示例源代码
+│   ├── rotation_demo.exe               # 编译后的可执行文件
+│   └── logs/                           # 日志输出目录
+│       ├── time_rotation/              # 时间轮转日志
+│       ├── size_rotation/              # 大小轮转日志
+│       ├── hierarchical/               # 分层路径日志
+│       ├── cleanup_demo/               # 清理演示日志
+│       └── easy_formatter/             # Easy格式器日志
 ├── concurrent_demo/                    # 并发示例
 │   ├── README.md                       # 并发示例说明
 │   ├── concurrent_demo.go              # 并发示例源代码

@@ -173,13 +173,14 @@ func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 		}
 
 		currentLogFileFPath = filepath.Join(logDir, settings.LogNameBase+".log")
-		fileWriter = &lumberjack.Logger{
+		lumberjackWriter = &lumberjack.Logger{
 			Filename:  currentLogFileFPath,
 			MaxSize:   settings.MaxSizeMB,
 			MaxAge:    settings.MaxAgeDays,
 			LocalTime: true,
 			Compress:  false,
 		}
+		fileWriter = lumberjackWriter
 		rotateLogsWriter = nil
 	} else {
 		// 时间轮转模式
@@ -203,6 +204,7 @@ func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 		fileWriter = rotateLogsWriter
 		// 使用 rotatelogs 提供的当前文件名
 		currentLogFileFPath = rotateLogsWriter.CurrentFileName()
+		lumberjackWriter = nil  // 时间轮转模式下不使用 lumberjack
 	}
 
 	Logger.SetLevel(settings.Level)
@@ -224,12 +226,20 @@ func NewLogHelperWithError(settings *Settings) (*logrus.Logger, error) {
 
 // closeOldResources 关闭旧的日志资源（需要在 loggerMutex 锁保护下调用）
 func closeOldResources() {
+	// 关闭 lumberjack writer（如果存在）
+	if lumberjackWriter != nil {
+		if err := lumberjackWriter.Close(); err != nil {
+			// 记录关闭错误但不阻止其他清理操作
+			fmt.Fprintf(os.Stderr, "Warning: Failed to close lumberjack writer: %v\n", err)
+		}
+		lumberjackWriter = nil
+	}
+
 	// 关闭 rotatelogs writer
 	// rotatelogs.RotateLogs 没有 Close 方法，所以我们只需要将其设为 nil
 	rotateLogsWriter = nil
 
-	// lumberjack.Logger 不需要显式关闭，它会在被垃圾回收时自动关闭
-	// 这里我们只需要清空路径
+	// 清空路径
 	currentLogFileFPath = ""
 }
 
@@ -238,6 +248,21 @@ func LogLinkFileFPath() string {
 	loggerMutex.RLock()
 	defer loggerMutex.RUnlock()
 	return currentLogFileFPath
+}
+
+// Close 关闭日志器并释放所有资源
+// 应用程序退出前应该调用此函数以确保所有日志被正确写入
+func Close() error {
+	loggerMutex.Lock()
+	defer loggerMutex.Unlock()
+
+	// 关闭所有资源
+	closeOldResources()
+
+	// 清理 logger 实例
+	loggerBase = nil
+
+	return nil
 }
 
 // CurrentFileName 当前日志文件名
@@ -249,17 +274,6 @@ func CurrentFileName() string {
 		return rotateLogsWriter.CurrentFileName()
 	}
 	return currentLogFileFPath
-}
-
-// Close 关闭日志器并释放资源
-func Close() error {
-	loggerMutex.Lock()
-	defer loggerMutex.Unlock()
-
-	closeOldResources()
-	loggerBase = nil
-
-	return nil
 }
 
 const (
@@ -324,6 +338,7 @@ func NewSettings() *Settings {
 var (
 	loggerBase          *logrus.Logger         // 日志基础记录器
 	rotateLogsWriter    *rotatelogs.RotateLogs // 日志轮转记录器
+	lumberjackWriter    *lumberjack.Logger     // 大小轮转记录器（需要资源管理）
 	currentLogFileFPath string                 // 当前日志文件路径
 	loggerMutex         sync.RWMutex           // 保护全局变量的互斥锁
 	loggerOnce          sync.Once              // 确保只初始化一次
@@ -537,7 +552,7 @@ func validateLogPath(path string) error {
 	pathParts := strings.Split(path, "/")
 	for _, part := range pathParts {
 		if part == ".." {
-			return fmt.Errorf("path traversal detected")
+			return fmt.Errorf("path traversal detected in path")
 		}
 	}
 
@@ -545,28 +560,77 @@ func validateLogPath(path string) error {
 	pathParts = strings.Split(path, "\\")
 	for _, part := range pathParts {
 		if part == ".." {
-			return fmt.Errorf("path traversal detected")
+			return fmt.Errorf("path traversal detected in path")
 		}
 	}
 
 	// 规范化路径
 	cleanPath := filepath.Clean(path)
 
-	// 在Windows上检查绝对路径
-	if filepath.IsAbs(cleanPath) {
-		// 检查是否访问系统关键目录
-		lowerPath := strings.ToLower(cleanPath)
-		systemDirs := []string{
-			`c:\windows`,
-			`c:\program files`,
-			`c:\program files (x86)`,
-			`c:\programdata`,
+	// 检查路径是否危险，但允许相对路径（用于测试和开发）
+	if !filepath.IsAbs(cleanPath) {
+		// 相对路径只允许 "." 或 "./" 作为特殊情况
+		if cleanPath != "." && cleanPath != "./" && !strings.HasPrefix(cleanPath, "./") {
+			return fmt.Errorf("log path must be absolute or start with './', got: %s", cleanPath)
 		}
+	}
+
+	// 只对绝对路径进行安全检查（相对路径通常是安全的）
+	if filepath.IsAbs(cleanPath) {
+		// 检查符号链接
+		if fi, err := os.Lstat(cleanPath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			realPath, err := filepath.EvalSymlinks(cleanPath)
+			if err != nil {
+				return fmt.Errorf("cannot resolve symlink at %s: %w", cleanPath, err)
+			}
+			cleanPath = filepath.Clean(realPath)
+		}
+
+		// 检查系统关键目录（跨平台）
+		lowerPath := strings.ToLower(cleanPath)
+		var systemDirs []string
+
+		if runtime.GOOS == "windows" {
+			systemDirs = []string{
+				`c:\windows`,
+				`c:\windows\system32`,
+				`c:\program files`,
+				`c:\program files (x86)`,
+				`c:\programdata`,
+				`c:\users`,
+				`\\?\c:\windows`,
+				`\\?\c:\program files`,
+			}
+		} else {
+			// Unix/Linux 系统
+			systemDirs = []string{
+				"/bin",
+				"/sbin",
+				"/usr/bin",
+				"/usr/sbin",
+				"/etc",
+				"/sys",
+				"/proc",
+				"/dev",
+				"/boot",
+				"/root",
+				"/lib",
+				"/lib64",
+				"/usr/lib",
+			}
+		}
+
 		for _, dir := range systemDirs {
-			if strings.HasPrefix(lowerPath, dir) {
+			if strings.HasPrefix(lowerPath, strings.ToLower(dir)) {
 				return fmt.Errorf("cannot use system directory: %s", dir)
 			}
 		}
+	}
+
+	// 检查路径长度（Windows 长路径限制）
+	if runtime.GOOS == "windows" && len(cleanPath) > 260 {
+		// 可以使用长路径前缀，但这里选择拒绝太长的路径
+		return fmt.Errorf("path too long (max 260 characters on Windows): %s", cleanPath)
 	}
 
 	return nil

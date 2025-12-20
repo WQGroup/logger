@@ -4,13 +4,23 @@ import "github.com/sirupsen/logrus"
 
 // getLoggerInternal 获取当前日志器，内部使用，避免自动初始化
 func getLoggerInternal() *logrus.Logger {
+	// 使用双重检查锁定模式确保线程安全
 	loggerMutex.RLock()
 	logger := loggerBase
 	loggerMutex.RUnlock()
 
-	// 如果 loggerBase 为 nil，返回 GetLogger() 的结果来触发自动初始化
 	if logger == nil {
-		return GetLogger()
+		// 需要初始化，获取写锁
+		loggerMutex.Lock()
+		defer loggerMutex.Unlock()
+
+		// 双重检查：在获取写锁后再次检查
+		if loggerBase == nil {
+			// 直接调用初始化逻辑，避免重复调用 GetLogger()
+			settings := NewSettings()
+			loggerBase, _ = NewLogHelperWithError(settings)
+		}
+		return loggerBase
 	}
 	return logger
 }

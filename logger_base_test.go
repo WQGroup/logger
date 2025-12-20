@@ -12,18 +12,20 @@ import (
 // TestLoggerBaseFunctions 测试 logger_base.go 中的所有包装函数
 func TestLoggerBaseFunctions(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建一个新的日志器用于测试
 	testLogger := logrus.New()
 	testLogger.Out = &bytes.Buffer{}       // 捕获输出
 	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
 
-	// 直接设置全局变量以绕过 GetLogger() 的自动初始化
+	// 使用锁保护设置全局变量
+	loggerMutex.Lock()
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
+	loggerMutex.Unlock()
 
 	// 测试所有格式化函数
 	testCases := []struct {
@@ -74,16 +76,16 @@ func TestLoggerBaseFunctions(t *testing.T) {
 // TestLoggerBaseFormattedFunctions 测试格式化日志函数
 func TestLoggerBaseFormattedFunctions(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建一个新的日志器用于测试
 	testLogger := logrus.New()
 	testLogger.Out = &bytes.Buffer{}       // 捕获输出
 	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
 
 	// 测试所有格式化函数
 	testCases := []struct {
@@ -132,16 +134,16 @@ func TestLoggerBaseFormattedFunctions(t *testing.T) {
 // TestLoggerBaseLnFunctions 测试带 ln 的日志函数
 func TestLoggerBaseLnFunctions(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建一个新的日志器用于测试
 	testLogger := logrus.New()
 	testLogger.Out = &bytes.Buffer{}       // 捕获输出
 	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
 
 	// 测试所有带 ln 的函数
 	testCases := []struct {
@@ -189,16 +191,16 @@ func TestLoggerBaseLnFunctions(t *testing.T) {
 // TestWithFieldFunction 测试 WithField 函数
 func TestWithFieldFunction(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建一个新的日志器用于测试
 	testLogger := logrus.New()
 	testLogger.Out = &bytes.Buffer{}       // 捕获输出
 	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
 
 	// 测试 WithField
 	entry := WithField("key", "value")
@@ -225,16 +227,16 @@ func TestWithFieldFunction(t *testing.T) {
 // TestWithFieldsFunction 测试 WithFields 函数
 func TestWithFieldsFunction(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建一个新的日志器用于测试
 	testLogger := logrus.New()
 	testLogger.Out = &bytes.Buffer{}       // 捕获输出
 	testLogger.SetLevel(logrus.DebugLevel) // 设置为 Debug 级别以确保所有日志都输出
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
 
 	// 测试 WithFields
 	fields := logrus.Fields{
@@ -270,10 +272,8 @@ func TestWithFieldsFunction(t *testing.T) {
 // TestSetLoggerNameFunction 测试 SetLoggerName 函数
 func TestSetLoggerNameFunction(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建临时目录
 	root, err := os.MkdirTemp("", "logger-ut-setname")
@@ -306,18 +306,19 @@ func TestSetLoggerNameFunction(t *testing.T) {
 // TestLoggerBaseNilHandling 测试日志器为 nil 时的处理
 func TestLoggerBaseNilHandling(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
+	backup := backupState()
 	// 需要重置 loggerOnce 以确保每次测试都能正确初始化
-	var originalOnce sync.Once
-	loggerOnce = originalOnce
+	loggerOnce = sync.Once{} // 直接重新初始化，不复制锁
 	defer func() {
-		loggerBase = originalLogger
+		backup.restoreState()
 		// 恢复 loggerOnce 以便后续测试正常工作
 		loggerOnce = sync.Once{}
 	}()
 
 	// 将日志器设置为 nil
+	loggerMutex.Lock()
 	loggerBase = nil
+	loggerMutex.Unlock()
 
 	// 测试所有函数在 loggerBase 为 nil 时的行为
 	testCases := []struct {
@@ -368,10 +369,8 @@ func TestLoggerBaseNilHandling(t *testing.T) {
 // TestLoggerBaseLevelFiltering 测试日志级别过滤
 func TestLoggerBaseLevelFiltering(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建临时目录
 	root, err := os.MkdirTemp("", "logger-ut-level-filter")
@@ -391,7 +390,9 @@ func TestLoggerBaseLevelFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
 	loggerBase.Out = &bytes.Buffer{} // 捕获输出
 
 	// 写入不同级别的日志
@@ -423,16 +424,16 @@ func TestLoggerBaseConcurrentAccess(t *testing.T) {
 	}
 
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 初始化日志器
 	testLogger := logrus.New()
 	testLogger.Out = &bytes.Buffer{}
 	testLogger.SetLevel(logrus.DebugLevel)
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
 
 	const numGoroutines = 20
 	const numCalls = 50
@@ -475,15 +476,15 @@ func TestLoggerBaseConcurrentAccess(t *testing.T) {
 // TestLoggerBaseComplexMessage 测试复杂消息格式
 func TestLoggerBaseComplexMessage(t *testing.T) {
 	// 保存原始状态
-	originalLogger := loggerBase
-	defer func() {
-		loggerBase = originalLogger
-	}()
+	backup := backupState()
+	defer backup.restoreState()
 
 	// 创建日志器
 	testLogger := logrus.New()
 	testLogger.Out = &bytes.Buffer{}
+	loggerMutex.Lock()
 	loggerBase = testLogger
+	loggerMutex.Unlock()
 
 	// 测试各种复杂消息
 	testCases := []struct {

@@ -16,21 +16,44 @@
 
 ### 1. 并发安全问题
 
-#### 1.1 全局变量竞态条件 [~]
-**文件**: `logger.go:224-228`
-**问题描述**: 全局变量没有互斥锁保护，存在严重的数据竞争
-**影响**: 可能导致程序崩溃或数据不一致
+#### 1.1 全局变量竞态条件 [!]
+**文件**: `logger.go:224-228`, `logger_base.go`
+**问题描述**: 虽然定义了 `loggerMutex` 但没有在所有访问点使用，存在严重的数据竞争
+**影响**: 生产环境必然出现竞态条件，导致程序崩溃或数据不一致
 **修复方案**:
-- 添加 `sync.RWMutex` 保护全局变量
-- 实现正确的双重检查锁定模式
-- 所有访问全局变量的地方都需要加锁
+```go
+var (
+    loggerInstance *LogHelper
+    loggerMutex    sync.RWMutex
+)
+
+func GetLogger() *LogHelper {
+    loggerMutex.RLock()
+    if loggerInstance != nil {
+        defer loggerMutex.RUnlock()
+        return loggerInstance
+    }
+    loggerMutex.RUnlock()
+
+    loggerMutex.Lock()
+    defer loggerMutex.Unlock()
+
+    // Double-check
+    if loggerInstance == nil {
+        loggerInstance = &LogHelper{}
+    }
+    return loggerInstance
+}
+```
 
 **任务清单**:
-- [ ] 定义 `loggerMutex` 变量
-- [ ] 修改 `GetLogger()` 函数添加锁保护
+- [x] 定义 `loggerMutex` 变量
+- [ ] 修改 `GetLogger()` 函数添加双重检查锁定
 - [ ] 修改 `SetLoggerSettings()` 函数添加锁保护
-- [ ] 检查所有访问全局变量的地方
-- [ ] 编写并发测试用例
+- [ ] 修改 `NewLogHelper()` 函数确保线程安全
+- [ ] 检查 `logger_base.go` 中所有全局变量访问
+- [ ] 编写 `go test -race` 并发测试用例
+- [ ] 验证所有竞态条件已修复
 
 #### 1.2 日志轮转竞态条件 [ ]
 **文件**: `logger.go`

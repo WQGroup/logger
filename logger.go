@@ -612,13 +612,16 @@ func validateLogPath(path string) error {
 		}
 	}
 
+	// 保存原始路径的前缀信息
+	hasRelativePrefix := strings.HasPrefix(path, "./") || strings.HasPrefix(path, ".\\") || path == "." || path == "./"
+
 	// 规范化路径
 	cleanPath := filepath.Clean(path)
 
 	// 检查路径是否危险，但允许相对路径（用于测试和开发）
 	if !filepath.IsAbs(cleanPath) {
-		// 相对路径只允许 "." 或 "./" 作为特殊情况
-		if cleanPath != "." && cleanPath != "./" && !strings.HasPrefix(cleanPath, "./") {
+		// 如果原始路径有相对路径前缀，或者清理后的路径是标准形式，则允许
+		if !hasRelativePrefix && cleanPath != "." && cleanPath != "./" && !strings.HasPrefix(cleanPath, "./") {
 			return fmt.Errorf("log path must be absolute or start with './', got: %s", cleanPath)
 		}
 	}

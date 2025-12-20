@@ -14,7 +14,7 @@ func ExampleWithFieldFormatter() {
 
 	settings := logger.NewSettings()
 	settings.FormatterType = logger.FormatterTypeWithField
-	settings.LogRootFPath = os.TempDir()
+	settings.LogRootFPath = "./temp_logs"
 	settings.LogNameBase = "withfield_example"
 
 	logger.SetLoggerSettings(settings)
@@ -51,7 +51,7 @@ func ExampleJSONFormatter() {
 
 	settings := logger.NewSettings()
 	settings.FormatterType = logger.FormatterTypeJSON
-	settings.LogRootFPath = os.TempDir()
+	settings.LogRootFPath = "./temp_logs"
 	settings.LogNameBase = "json_example"
 
 	logger.SetLoggerSettings(settings)
@@ -74,7 +74,7 @@ func ExampleTextFormatter() {
 
 	settings := logger.NewSettings()
 	settings.FormatterType = logger.FormatterTypeText
-	settings.LogRootFPath = os.TempDir()
+	settings.LogRootFPath = "./temp_logs"
 	settings.LogNameBase = "text_example"
 
 	logger.SetLoggerSettings(settings)
@@ -116,7 +116,7 @@ func ExampleCustomFormatter() {
 
 	settings := logger.NewSettings()
 	settings.CustomFormatter = &CustomFormatter{}
-	settings.LogRootFPath = os.TempDir()
+	settings.LogRootFPath = "./temp_logs"
 	settings.LogNameBase = "custom_example"
 
 	logger.SetLoggerSettings(settings)
@@ -137,7 +137,7 @@ func ExampleFormatterFromYAML() {
 	fmt.Println("=== YAML Configuration Example ===")
 
 	yamlContent := `
-log_root: "./logs"
+log_root: "./temp_logs_yaml"
 log_name_base: "yaml_example"
 level: "debug"
 days_to_keep: 7

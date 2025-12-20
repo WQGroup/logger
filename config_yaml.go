@@ -59,7 +59,12 @@ func LoadSettingsFromYAML(path string) (*Settings, error) {
 	}
 	s := NewSettings()
 	if cfg.LogRoot != "" {
-		s.LogRootFPath = cfg.LogRoot
+		// 确保相对路径以 ./ 开头
+		if len(cfg.LogRoot) > 0 && cfg.LogRoot[0] != '/' && cfg.LogRoot[0] != '.' && len(cfg.LogRoot) > 1 && cfg.LogRoot[1] != ':' {
+			s.LogRootFPath = "./" + cfg.LogRoot
+		} else {
+			s.LogRootFPath = cfg.LogRoot
+		}
 	}
 	if cfg.LogNameBase != "" {
 		s.LogNameBase = cfg.LogNameBase
